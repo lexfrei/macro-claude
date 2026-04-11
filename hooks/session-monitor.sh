@@ -37,6 +37,7 @@ input="$(cat)"
 session_id="$(jq --raw-output '.session_id // empty' <<<"${input}")"
 event="$(jq --raw-output '.hook_event_name // empty' <<<"${input}")"
 cwd="$(jq --raw-output '.cwd // empty' <<<"${input}")"
+message="$(jq --raw-output '.message // empty' <<<"${input}")"
 
 if [[ -z "${session_id}" || -z "${event}" ]]; then
   exit 0
@@ -61,10 +62,34 @@ case "${event}" in
     status="working"
     ;;
   Notification)
-    # Claude Code fires Notification when it is waiting on the user —
-    # plan-mode approval, permission prompt, interactive input.
-    # Surfaced on the macropad as its own "waiting for you" state.
-    status="waiting"
+    # Claude Code fires Notification for two very different things:
+    #
+    #   1. "Claude needs your permission to use <tool>"
+    #      "Claude is waiting for plan approval"
+    #      — real blocking gates, we want the macropad to show
+    #      Waiting so the user sees which session needs them.
+    #
+    #   2. "Claude is waiting for your input"
+    #      — sent after a turn finishes. Semantically identical to
+    #      Idle, the session is no longer blocked on itself; the
+    #      user just has the turn back. Showing this as Waiting
+    #      would flag every finished-turn session as "needs you"
+    #      even though nothing is actually blocked.
+    #
+    # Distinguish by the message field: "waiting for your input"
+    # is Idle, everything else (permission, approval, plan) is
+    # Waiting. Match is case-insensitive and tolerates minor
+    # wording drift between Claude Code versions.
+    case "${message,,}" in
+      *"waiting for your input"*)
+        # Same semantic as Stop — turn done, user has control.
+        status="idle"
+        event="Stop"
+        ;;
+      *)
+        status="waiting"
+        ;;
+    esac
     ;;
   StopFailure)
     status="error"
