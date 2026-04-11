@@ -185,6 +185,7 @@ public sealed class StatusReader : IDisposable
     {
         try
         {
+            this.ReconcileSessionStatusDirectory();
             this.RefreshCpuUsage();
             this.RefreshJsonlSignals();
             this.EmitAllSnapshots();
@@ -192,6 +193,62 @@ public sealed class StatusReader : IDisposable
         catch (Exception ex)
         {
             Debug.WriteLine($"StatusReader poll error: {ex.Message}");
+        }
+    }
+
+    // FileSystemWatcher on macOS sits on top of FSEvents and routinely
+    // drops rapid Rename/Delete events, especially when hooks churn the
+    // session-status directory. That leaves ghost sessions in memory
+    // forever. This reconciliation sweep is cheap (one enumerate per
+    // second over a tiny directory) and catches everything the watcher
+    // missed: any session_id that no longer has a file on disk is
+    // removed from _bySessionId and the subscriber is notified.
+    private void ReconcileSessionStatusDirectory()
+    {
+        if (this._bySessionId.IsEmpty)
+        {
+            return;
+        }
+
+        HashSet<String> onDisk;
+        try
+        {
+            if (!Directory.Exists(this._sessionStatusDir))
+            {
+                onDisk = new HashSet<String>(StringComparer.Ordinal);
+            }
+            else
+            {
+                onDisk = Directory
+                    .EnumerateFiles(this._sessionStatusDir, "*.json")
+                    .Select(p => Path.GetFileNameWithoutExtension(p) ?? String.Empty)
+                    .Where(n => !String.IsNullOrEmpty(n))
+                    .ToHashSet(StringComparer.Ordinal);
+            }
+        }
+        catch (IOException)
+        {
+            return;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return;
+        }
+
+        foreach (var sessionId in this._bySessionId.Keys.ToArray())
+        {
+            if (onDisk.Contains(sessionId))
+            {
+                continue;
+            }
+            if (this._bySessionId.TryRemove(sessionId, out var acc))
+            {
+                if (acc.Pid > 0)
+                {
+                    this._sessionIdByPid.TryRemove(acc.Pid, out _);
+                }
+                this.SessionRemoved?.Invoke(this, sessionId);
+            }
         }
     }
 
