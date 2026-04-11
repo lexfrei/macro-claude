@@ -37,6 +37,9 @@
     <Compile Include="..\MacroClaudePlugin\src\Status\SlotAssigner.cs">
       <Link>Linked\SlotAssigner.cs</Link>
     </Compile>
+    <Compile Include="..\MacroClaudePlugin\src\Status\GitRepoResolver.cs">
+      <Link>Linked\GitRepoResolver.cs</Link>
+    </Compile>
   </ItemGroup>
 
   <ItemGroup>

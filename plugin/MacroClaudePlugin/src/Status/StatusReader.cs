@@ -186,6 +186,7 @@ public sealed class StatusReader : IDisposable
         try
         {
             this.ReconcileSessionStatusDirectory();
+            this.ResolveMissingPids();
             this.RefreshCpuUsage();
             this.RefreshJsonlSignals();
             this.EmitAllSnapshots();
@@ -193,6 +194,25 @@ public sealed class StatusReader : IDisposable
         catch (Exception ex)
         {
             Debug.WriteLine($"StatusReader poll error: {ex.Message}");
+        }
+    }
+
+    // Every tick, look at accumulators that still have Pid=0 and try
+    // to resolve them against the sessions directory. This is a
+    // belt-and-braces retry for cases where the hook arrived before
+    // Claude Code had written its sessions/<pid>.json file.
+    private void ResolveMissingPids()
+    {
+        if (this._bySessionId.IsEmpty)
+        {
+            return;
+        }
+        foreach (var acc in this._bySessionId.Values)
+        {
+            if (acc.Pid == 0)
+            {
+                this.TryResolvePidForSession(acc);
+            }
         }
     }
 
@@ -298,6 +318,81 @@ public sealed class StatusReader : IDisposable
         }
     }
 
+    // Claude Code writes ~/.claude/sessions/<pid>.json asynchronously
+    // after it starts, so a hook SessionStart event can race ahead of
+    // the sessions file. The hook path gives us session_id + cwd but
+    // no pid, leaving Accumulator.Pid at its default zero — the focus
+    // dispatcher then rejects the button press with InvalidPid. When
+    // we notice a zero Pid, sweep the sessions directory for a file
+    // that claims the same sessionId and adopt its pid.
+    private void TryResolvePidForSession(Accumulator acc)
+    {
+        if (acc.Pid > 0 || String.IsNullOrEmpty(acc.SessionId))
+        {
+            return;
+        }
+        if (!Directory.Exists(this._sessionsDir))
+        {
+            return;
+        }
+        try
+        {
+            foreach (var file in Directory.EnumerateFiles(this._sessionsDir, "*.json"))
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(File.ReadAllBytes(file));
+                    var root = doc.RootElement;
+                    if (!root.TryGetProperty("sessionId", out var sidEl)
+                        || sidEl.ValueKind != JsonValueKind.String
+                        || sidEl.GetString() != acc.SessionId)
+                    {
+                        continue;
+                    }
+                    if (!root.TryGetProperty("pid", out var pidEl)
+                        || pidEl.ValueKind != JsonValueKind.Number)
+                    {
+                        continue;
+                    }
+                    var pid = pidEl.GetInt32();
+                    if (pid <= 0)
+                    {
+                        continue;
+                    }
+                    acc.Pid = pid;
+                    if (root.TryGetProperty("cwd", out var cwdEl) && cwdEl.ValueKind == JsonValueKind.String)
+                    {
+                        acc.Cwd = cwdEl.GetString() ?? acc.Cwd;
+                    }
+                    if (root.TryGetProperty("name", out var nameEl) && nameEl.ValueKind == JsonValueKind.String)
+                    {
+                        acc.DisplayName = nameEl.GetString();
+                    }
+                    this._sessionIdByPid[pid] = acc.SessionId;
+                    return;
+                }
+                catch (IOException)
+                {
+                    // Partial write / disappeared — try next file.
+                }
+                catch (JsonException)
+                {
+                    // Non-JSON garbage — try next file.
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    // Locked — try next file.
+                }
+            }
+        }
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
+    }
+
     private void TryReadStatusFile(String path)
     {
         try
@@ -313,6 +408,12 @@ public sealed class StatusReader : IDisposable
             }
 
             var acc = this._bySessionId.GetOrAdd(sessionId, _ => new Accumulator { SessionId = sessionId });
+
+            // Resolve pid from ~/.claude/sessions/<pid>.json when we
+            // still do not have one. Hook events race ahead of the
+            // sessions file, and FSEvents sometimes drops the Created
+            // notification entirely, so this guard catches both.
+            this.TryResolvePidForSession(acc);
 
             if (root.TryGetProperty("cwd", out var cwdEl))
             {
@@ -614,7 +715,8 @@ public sealed class StatusReader : IDisposable
             State: state,
             TurnStartedAt: acc.TurnStartedAt,
             IdleSince: acc.IdleSince,
-            UpdatedAt: now);
+            UpdatedAt: now,
+            RepoName: GitRepoResolver.ResolveRepoName(acc.Cwd) ?? String.Empty);
 
         this.SessionUpdated?.Invoke(this, snapshot);
     }

@@ -15,7 +15,8 @@ public sealed class SessionSnapshotTests
         DateTimeOffset? turnStartedAt = null,
         DateTimeOffset? idleSince = null,
         String displayName = "",
-        String cwd = "/Users/lex/git/github.com/lexfrei/macro-claude")
+        String cwd = "/Users/lex/git/github.com/lexfrei/macro-claude",
+        String repoName = "")
         => new(
             SessionId: "session-uuid-0123",
             Pid: 42,
@@ -24,7 +25,8 @@ public sealed class SessionSnapshotTests
             State: state,
             TurnStartedAt: turnStartedAt,
             IdleSince: idleSince,
-            UpdatedAt: Now);
+            UpdatedAt: Now,
+            RepoName: repoName);
 
     // ------------------------------------------------------------------
     // Elapsed
@@ -140,5 +142,70 @@ public sealed class SessionSnapshotTests
             cwd: "/tmp/test-session");
 
         Assert.Equal("test-session", snapshot.ShortName);
+    }
+
+    [Fact]
+    public void ShortName_Prefers_RepoName_Over_DisplayName()
+    {
+        // Emulates a git worktree: StatusReader.Emit resolves the main
+        // repo name from cwd's .git file and stuffs it into RepoName,
+        // while DisplayName still holds the branch name from
+        // sessions/<pid>.json. The user wants to see the repo, not the
+        // branch.
+        var snapshot = Build(
+            SessionState.Idle,
+            displayName: "passthrough-auth-refactor",
+            cwd: "/Users/lex/git/github.com/lexfrei/cozytempl-wt/passthrough-auth-refactor",
+            repoName: "cozytempl");
+
+        Assert.Equal("cozytempl", snapshot.ShortName);
+    }
+
+    [Fact]
+    public void ShortName_Prefers_RepoName_Over_Cwd_Basename()
+    {
+        var snapshot = Build(
+            SessionState.Idle,
+            displayName: "",
+            cwd: "/Users/lex/git/github.com/lexfrei/cozytempl-wt/feature-x",
+            repoName: "cozytempl");
+
+        Assert.Equal("cozytempl", snapshot.ShortName);
+    }
+
+    [Fact]
+    public void ShortName_Falls_Back_To_DisplayName_When_RepoName_Is_Empty()
+    {
+        var snapshot = Build(
+            SessionState.Idle,
+            displayName: "my-named-session",
+            cwd: "/Users/lex/git/github.com/lexfrei/macro-claude",
+            repoName: "");
+
+        Assert.Equal("my-named-session", snapshot.ShortName);
+    }
+
+    [Fact]
+    public void ShortName_Falls_Back_To_Cwd_Basename_When_RepoName_And_DisplayName_Empty()
+    {
+        var snapshot = Build(
+            SessionState.Idle,
+            displayName: "",
+            cwd: "/Users/lex/git/github.com/lexfrei/macro-claude",
+            repoName: "");
+
+        Assert.Equal("macro-claude", snapshot.ShortName);
+    }
+
+    [Fact]
+    public void ShortName_Ignores_Whitespace_RepoName()
+    {
+        var snapshot = Build(
+            SessionState.Idle,
+            displayName: "branch-name",
+            cwd: "/tmp/foo",
+            repoName: "   ");
+
+        Assert.Equal("branch-name", snapshot.ShortName);
     }
 }

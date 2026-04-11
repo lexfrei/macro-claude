@@ -13,7 +13,8 @@ public sealed record SessionSnapshot(
     SessionState State,
     DateTimeOffset? TurnStartedAt,
     DateTimeOffset? IdleSince,
-    DateTimeOffset UpdatedAt)
+    DateTimeOffset UpdatedAt,
+    String RepoName = "")
 {
     // Duration of the current turn (working/thinking/stuck) or the time
     // spent idle, depending on the state. Null for gone/error.
@@ -28,11 +29,24 @@ public sealed record SessionSnapshot(
         _ => null,
     };
 
-    // Short label for the button (last path component or session name).
+    // Short label for the button. Preference order:
+    //   1. RepoName — resolved by GitRepoResolver at emit time, walks
+    //      `.git` pointers so git worktrees show the main repo name
+    //      instead of their branch-name basename.
+    //   2. DisplayName — the `name` field from sessions/<pid>.json, set
+    //      by Claude Code itself. Usually a git branch name, which is
+    //      only useful when there's no cwd to work with.
+    //   3. cwd basename — last path component of the session cwd.
+    //   4. First eight characters of the session UUID — ultimate
+    //      fallback so buttons never render with an empty name.
     public String ShortName
     {
         get
         {
+            if (!String.IsNullOrWhiteSpace(this.RepoName))
+            {
+                return this.RepoName;
+            }
             if (!String.IsNullOrWhiteSpace(this.DisplayName))
             {
                 return this.DisplayName;

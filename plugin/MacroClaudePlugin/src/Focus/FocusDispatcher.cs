@@ -104,22 +104,38 @@ public static class FocusDispatcher
         }
 
         // 2. Try iTerm2 session-level focus via the protobuf API. This
-        //    is the ideal path — it activates the exact session (tab +
-        //    split) that owns the Claude Code process, not just the
-        //    iTerm2 app. Requires the user to have enabled the iTerm2
-        //    Python API in Settings > General > Magic; on first use it
-        //    triggers an AppleScript cookie prompt which the user must
-        //    approve once per plugin process lifetime.
+        //    activates the exact session that owns the Claude Code
+        //    process, not just the iTerm2 app. Requires the user to
+        //    have enabled the iTerm2 Python API in Settings > General
+        //    > Magic; on first use it triggers an AppleScript cookie
+        //    prompt which the user must approve once per plugin
+        //    process lifetime. Most users never flip the Python API
+        //    toggle, so this path is best-effort.
         if (await ITerm2Client.FocusSessionByPidAsync(pid, cancellationToken).ConfigureAwait(false))
         {
             NativeActivator.ActivateByBundleId(ITerm2BundleId);
             return FocusResult.ITerm2Session;
         }
 
-        // 3. iTerm2 app-level activate — happens when the API is off,
-        //    the socket is missing, the cookie was denied, or no
-        //    session matches the PID. The user lands in iTerm2 and
-        //    picks the tab manually.
+        // 3. AppleScript session-level focus via iTerm2's AppleScript
+        //    dictionary. Zero configuration — unlike the Python API
+        //    this works out of the box and, unlike VS Code's
+        //    AppleScriptActivator (which uses System Events + AX),
+        //    it works across fullscreen Spaces because the commands
+        //    execute inside iTerm2's own process and are not subject
+        //    to Accessibility API's Space-locality limitation. We
+        //    look up the session by the target PID's controlling TTY
+        //    via ps, which matches regardless of whether the PID is
+        //    the shell itself or any descendant like claude.
+        if (ITerm2AppleScriptActivator.FocusSessionByPid(pid))
+        {
+            return FocusResult.ITerm2Session;
+        }
+
+        // 4. iTerm2 app-level activate — last resort when AppleScript
+        //    could not match a session (e.g. the pid has no tty or
+        //    lives outside iTerm2 entirely). The user lands in iTerm2
+        //    somewhere and picks the tab manually.
         if (NativeActivator.ActivateByBundleId(ITerm2BundleId))
         {
             return FocusResult.ITerm2AppOnly;

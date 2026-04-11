@@ -114,42 +114,154 @@ public abstract class SlotCommandBase : PluginDynamicCommand
         this.ActionImageChanged();
     }
 
+    // Button layout (works at both 60x60 and 90x90 MXCC sizes):
+    //
+    //   ┌──────────────────┐
+    //   │ ████████████████ │  4px accent bar — state colour
+    //   │                  │
+    //   │        ●         │  large state glyph — state colour
+    //   │                  │
+    //   │   macro-claude   │  project name — white
+    //   │      00:42       │  elapsed time — muted grey
+    //   └──────────────────┘
+    //
+    // Dark background, colour is used as an accent rather than a
+    // wash, to avoid the "traffic light" look the user complained
+    // about. The large glyph carries the state recognition at a
+    // glance; accent bar confirms it with colour without drowning
+    // the text.
+    private static readonly BitmapColor Background = new(24, 24, 26);
+    private static readonly BitmapColor NameColor = new(235, 235, 235);
+    private static readonly BitmapColor MutedColor = new(140, 140, 150);
+
     private static BitmapImage DrawEmpty(PluginImageSize imageSize)
     {
         using var builder = new BitmapBuilder(imageSize);
-        builder.Clear(new BitmapColor(30, 30, 30));
-        builder.DrawText("—", BitmapColor.White);
+        builder.Clear(Background);
+
+        var w = builder.Width;
+        var h = builder.Height;
+
+        builder.DrawText(
+            text: "·",
+            x: 0,
+            y: 0,
+            width: w,
+            height: h,
+            color: MutedColor,
+            fontSize: h / 2,
+            lineHeight: 0,
+            spaceHeight: 0,
+            fontName: null);
         return builder.ToImage();
     }
 
     private static BitmapImage DrawSlot(SessionSnapshot snapshot, PluginImageSize imageSize)
     {
         using var builder = new BitmapBuilder(imageSize);
-        builder.Clear(BackgroundFor(snapshot.State));
-        var text = $"{LabelFor(snapshot.State)}{Environment.NewLine}{snapshot.ShortName}{Environment.NewLine}{FormatElapsed(snapshot.Elapsed)}";
-        builder.DrawText(text, BitmapColor.White);
+        builder.Clear(Background);
+
+        var w = builder.Width;
+        var h = builder.Height;
+        var accent = AccentFor(snapshot.State);
+
+        // Precomputed layout constants derived from button height.
+        // Named intermediates sidestep the SA1407 / IDE0047 precedence
+        // flip-flop between the two analyzer packs.
+        var quarter = h / 4;
+        var half = h / 2;
+        var twentieth = h / 20;
+        var barH = Math.Max(3, twentieth);
+        var glyphSize = (Int32)((Double)h * 0.38);
+        var glyphY = barH + 2;
+        var glyphH = half - barH;
+        var nameSize = Math.Max(10, h / 7);
+        var nameY = half + 2;
+        var nameH = quarter;
+        var timeSize = Math.Max(9, h / 8);
+        var timeY = h - quarter;
+        var timeH = quarter - 2;
+        var textX = 2;
+        var textW = w - 4;
+
+        // Top accent bar — state colour strip.
+        builder.FillRectangle(0, 0, w, barH, accent);
+
+        // Large state glyph, top third.
+        builder.DrawText(
+            text: GlyphFor(snapshot.State),
+            x: 0,
+            y: glyphY,
+            width: w,
+            height: glyphH,
+            color: accent,
+            fontSize: glyphSize,
+            lineHeight: 0,
+            spaceHeight: 0,
+            fontName: null);
+
+        // Project name, middle strip.
+        builder.DrawText(
+            text: TruncateForButton(snapshot.ShortName, w),
+            x: textX,
+            y: nameY,
+            width: textW,
+            height: nameH,
+            color: NameColor,
+            fontSize: nameSize,
+            lineHeight: 0,
+            spaceHeight: 0,
+            fontName: null);
+
+        // Elapsed time, bottom strip.
+        builder.DrawText(
+            text: FormatElapsed(snapshot.Elapsed),
+            x: textX,
+            y: timeY,
+            width: textW,
+            height: timeH,
+            color: MutedColor,
+            fontSize: timeSize,
+            lineHeight: 0,
+            spaceHeight: 0,
+            fontName: null);
+
         return builder.ToImage();
     }
 
-    private static BitmapColor BackgroundFor(SessionState state) => state switch
+    // Trim the name to something that will not clip the button. The
+    // SDK will squash text to fit, but very long names become a grey
+    // smudge. Cap at 14 characters with an ellipsis; button widths
+    // in the 60-90px range render up to ~10 characters comfortably
+    // at the name font size we picked.
+    private static String TruncateForButton(String name, Int32 width)
     {
-        SessionState.Gone => new BitmapColor(30, 30, 30),       // dark gray
-        SessionState.Idle => new BitmapColor(30, 150, 70),      // green
-        SessionState.Working => new BitmapColor(30, 100, 200),  // blue
-        SessionState.Thinking => new BitmapColor(30, 180, 200), // cyan
-        SessionState.Stuck => new BitmapColor(220, 120, 30),    // orange
-        SessionState.Error => new BitmapColor(200, 50, 50),     // red
-        _ => new BitmapColor(30, 30, 30),
+        _ = width;
+        return name.Length <= 14 ? name : name[..13] + "…";
+    }
+
+    private static BitmapColor AccentFor(SessionState state) => state switch
+    {
+        SessionState.Gone => new BitmapColor(90, 90, 95),        // muted grey
+        SessionState.Idle => new BitmapColor(90, 210, 130),      // soft green
+        SessionState.Working => new BitmapColor(100, 160, 255),  // bright blue
+        SessionState.Thinking => new BitmapColor(120, 220, 230), // cyan
+        SessionState.Stuck => new BitmapColor(255, 170, 60),     // amber
+        SessionState.Error => new BitmapColor(240, 90, 90),      // red
+        _ => new BitmapColor(90, 90, 95),
     };
 
-    private static String LabelFor(SessionState state) => state switch
+    // Single-glyph state icon, legible at 38% button height. Each
+    // glyph is in the core Unicode planes that the Loupedeck default
+    // font renders correctly on MXCC.
+    private static String GlyphFor(SessionState state) => state switch
     {
-        SessionState.Idle => "IDLE",
-        SessionState.Working => "WORK",
-        SessionState.Thinking => "THINK",
-        SessionState.Stuck => "STUCK",
-        SessionState.Error => "ERROR",
-        SessionState.Gone => "GONE",
+        SessionState.Idle => "●",      // solid circle
+        SessionState.Working => "▶",   // right-pointing triangle
+        SessionState.Thinking => "⋯",  // horizontal ellipsis
+        SessionState.Stuck => "‼",     // double exclamation
+        SessionState.Error => "✗",     // heavy x
+        SessionState.Gone => "·",      // middle dot
         _ => "?",
     };
 

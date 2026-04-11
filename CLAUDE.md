@@ -399,12 +399,56 @@ cat ~/.claude/session-status/TEST.json
 - **StyleCop.Analyzers 1.2.0-beta.556**, **Roslynator 4.13.1** — pinned in
   root `Directory.Build.props`.
 
+## Focus-cascade shell-outs are allowed (but scoped)
+
+An earlier iteration of this doc said "no `osascript`/`open -a`
+shell-outs for window focus, use P/Invoke to libobjc instead". That
+turned out to be impossible for three real scenarios we hit on Sonoma
+and Sequoia:
+
+1. **Multi-window VS Code across fullscreen Spaces.**
+   `NSRunningApplication.activateWithOptions:` can only raise the
+   most-recently-used window for a multi-window app, and AX API (via
+   System Events) is Space-local — it literally cannot see windows on
+   other fullscreen Spaces. The only reliable path is
+   `/usr/bin/open "vscode://file/<workspaceRoot>"`. LaunchServices
+   handles the URL, picks the exact window already holding that
+   folder, and transparently switches the user to the owning Space.
+   Implemented in `Focus/VSCodeUrlActivator.cs`.
+
+2. **iTerm2 session-level focus without Python API.**
+   `ITerm2Client` talks protobuf to the iTerm2 Python API, but most
+   users never flip the Settings → General → Magic → Enable Python
+   API toggle. iTerm2's AppleScript dictionary works out of the box
+   and, critically, runs *inside* iTerm2's own process, so it bypasses
+   AX and reaches sessions on other fullscreen Spaces. Implemented in
+   `Focus/ITerm2AppleScriptActivator.cs`. The AppleScript must do
+   `tell w to select t` *before* `tell t to select s` — `select s`
+   alone does not switch the owning tab.
+
+3. **VS Code single-Space AXRaise fallback.**
+   `Focus/AppleScriptActivator.cs` tells System Events to AXRaise the
+   first `Code` window whose title contains the workspace name. It
+   only works when all VS Code windows live in the same Space, so it
+   sits below the URL-scheme path in the cascade, but it is cheaper
+   than spawning a new VS Code window if the URL path fails.
+
+**Rule:** plain `open -a AppName` app activation is still banned — it
+is equivalent to the P/Invoke path and adds no value. URL-scheme
+activation (`vscode://`, and any future `iterm2://` if iTerm2 ever
+adds one), and AppleScript calls that reach specific windows/sessions
+via the target application's own scripting dictionary or System
+Events, are allowed. Add them to the focus cascade below the native
+P/Invoke paths so the shell-out only happens when the native path
+cannot reach the target.
+
 ## Things we intentionally do NOT do
 
-- **No `osascript`/`open -a` shell-outs for window focus.** We use
-  P/Invoke to `libobjc.A.dylib` instead (`Focus/NativeActivator.cs`). The
-  goal is a self-contained plugin without runtime dependencies on macOS
-  shell utilities.
+- **No `open -a AppName` for plain app activation.** Use
+  `NativeActivator.ActivateByBundleId` instead — it does the same
+  thing through P/Invoke to libobjc, with no process spawn. The URL
+  and AppleScript shell-outs above are the exceptions, not an open
+  door.
 - **No `net8.0-macos` target framework.** The `Microsoft.macOS.dll`
   assembly is 30 MB and is not needed for the small set of AppKit calls
   we make — P/Invoke to `libobjc.A.dylib` gives us the same result with
