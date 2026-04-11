@@ -24,7 +24,9 @@ public class MacroClaudePlugin : Plugin
     {
         var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 
-        this._slotAssigner = new SlotAssigner(maxSlots: 9);
+        // 27 = three full MX Creative Console profile pages. See
+        // SessionStatusCommand.MaxSlots for rationale.
+        this._slotAssigner = new SlotAssigner(maxSlots: 27);
         this._statusReader = new StatusReader(home);
         this._statusReader.SessionUpdated += this.OnSessionUpdated;
         this._statusReader.SessionRemoved += this.OnSessionRemoved;

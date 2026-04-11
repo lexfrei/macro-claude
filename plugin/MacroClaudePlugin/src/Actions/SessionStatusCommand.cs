@@ -12,7 +12,11 @@ namespace Loupedeck.MacroClaudePlugin.Actions;
 // has been assigned to that slot by SlotAssigner.
 public class SessionStatusCommand : PluginDynamicCommand
 {
-    private const Int32 MaxSlots = 9;
+    // 27 slots = three full MX Creative Console profile pages worth. A
+    // power user with that many concurrent Claude Code sessions is
+    // rare, and if they appear, the user drags the slotN parameters
+    // onto whichever pages they like in Logi Options+.
+    private const Int32 MaxSlots = 27;
     private const String SlotPrefix = "slot";
 
     private readonly ConcurrentDictionary<Int32, SessionSnapshot> _snapshotsBySlot = new();
@@ -20,9 +24,20 @@ public class SessionStatusCommand : PluginDynamicCommand
     public SessionStatusCommand()
         : base(displayName: "Claude Session", description: "Show Claude Code session status", groupName: "Claude")
     {
+        // Slots 0-8 / 9-17 / 18-26 map to three visual groups in the
+        // Logi Options+ command picker so 27 parameters are not a
+        // single flat list.
+        const Int32 slotsPerPage = 9;
         for (var i = 0; i < MaxSlots; i++)
         {
-            this.AddParameter($"{SlotPrefix}{i}", $"Slot {i + 1}", "Claude");
+            var pageIndex = i / slotsPerPage;
+            var indexOnPage = i % slotsPerPage;
+            var pageLabel = pageIndex + 1;
+            var slotLabel = indexOnPage + 1;
+            this.AddParameter(
+                $"{SlotPrefix}{i}",
+                $"Page {pageLabel} — Slot {slotLabel}",
+                $"Claude / Page {pageLabel}");
         }
 
         SlotBus.SlotChanged += this.OnSlotChanged;
