@@ -37,8 +37,14 @@ public static class StateResolver
         DateTimeOffset? heartbeatAt,
         Double cpuPercent,
         Boolean interruptedMarker,
-        DateTimeOffset now)
+        DateTimeOffset now,
+        StateResolverConfig? config = null)
     {
+        var freshWindow = config?.FreshHeartbeatWindow ?? FreshHeartbeatWindow;
+        var staleWindow = config?.StaleHeartbeatWindow ?? StaleHeartbeatWindow;
+        var cpuActive = config?.CpuActiveThreshold ?? CpuActiveThreshold;
+        var cpuIdle = config?.CpuIdleThreshold ?? CpuIdleThreshold;
+
         if (interruptedMarker || lastEvent == "StopFailure")
         {
             return SessionState.Error;
@@ -59,23 +65,24 @@ public static class StateResolver
             ? now - heartbeatAt.Value
             : TimeSpan.MaxValue;
 
-        if (heartbeatAge < FreshHeartbeatWindow)
+        if (heartbeatAge < freshWindow)
         {
             return SessionState.Working;
         }
 
-        if (heartbeatAge > StaleHeartbeatWindow && cpuPercent < CpuIdleThreshold)
+        if (heartbeatAge > staleWindow && cpuPercent < cpuIdle)
         {
             return SessionState.Stuck;
         }
 
-        if (cpuPercent > CpuActiveThreshold)
+        if (cpuPercent > cpuActive)
         {
             return SessionState.Thinking;
         }
 
-        // Heartbeat is in the middle band (3-30s) and CPU is neither
-        // clearly busy nor clearly idle — treat as stuck to grab attention.
+        // Heartbeat is in the middle band (fresh..stale) and CPU is
+        // neither clearly busy nor clearly idle — treat as stuck to
+        // grab attention.
         return SessionState.Stuck;
     }
 }

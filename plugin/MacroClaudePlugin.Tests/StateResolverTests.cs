@@ -165,4 +165,65 @@ public sealed class StateResolverTests
 
         Assert.Equal(SessionState.Stuck, state);
     }
+
+    // -------------------------------------------------------------------
+    // Config overrides
+    // -------------------------------------------------------------------
+
+    [Fact]
+    public void Config_Override_Widens_Fresh_Window()
+    {
+        // Heartbeat is 10 seconds old. With the default 3 s window this
+        // would NOT be "working", but with a 15 s window it should be.
+        var config = new StateResolverConfig
+        {
+            FreshHeartbeatWindow = TimeSpan.FromSeconds(15),
+        };
+
+        var state = StateResolver.Determine(
+            lastEvent: "PreToolUse",
+            heartbeatAt: Now.AddSeconds(-10),
+            cpuPercent: 0.0,
+            interruptedMarker: false,
+            now: Now,
+            config: config);
+
+        Assert.Equal(SessionState.Working, state);
+    }
+
+    [Fact]
+    public void Config_Override_Tightens_Cpu_Active_Threshold()
+    {
+        // 5% CPU with default 1% threshold is thinking. Raise the bar to
+        // 10% and the same CPU is not considered active → stuck in the
+        // middle band.
+        var config = new StateResolverConfig
+        {
+            CpuActiveThreshold = 10.0,
+        };
+
+        var state = StateResolver.Determine(
+            lastEvent: "PreToolUse",
+            heartbeatAt: Now.AddSeconds(-10),
+            cpuPercent: 5.0,
+            interruptedMarker: false,
+            now: Now,
+            config: config);
+
+        Assert.Equal(SessionState.Stuck, state);
+    }
+
+    [Fact]
+    public void Config_Null_Uses_Defaults()
+    {
+        var freshState = StateResolver.Determine(
+            lastEvent: "PreToolUse",
+            heartbeatAt: Now.AddSeconds(-1),
+            cpuPercent: 0.0,
+            interruptedMarker: false,
+            now: Now,
+            config: null);
+
+        Assert.Equal(SessionState.Working, freshState);
+    }
 }

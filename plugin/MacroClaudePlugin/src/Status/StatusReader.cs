@@ -31,13 +31,20 @@ public sealed class StatusReader : IDisposable
     private readonly ConcurrentDictionary<String, Accumulator> _bySessionId;
     private readonly ConcurrentDictionary<Int32, String> _sessionIdByPid;
     private readonly System.Timers.Timer _pollTimer;
+    private readonly StateResolverConfig? _resolverConfig;
     private Boolean _disposed;
 
     public event EventHandler<SessionSnapshot>? SessionUpdated;
     public event EventHandler<String>? SessionRemoved;
 
     public StatusReader(String homeDirectory)
+        : this(homeDirectory, LoadResolverConfigFromDefaultLocation(homeDirectory))
     {
+    }
+
+    public StatusReader(String homeDirectory, StateResolverConfig? resolverConfig)
+    {
+        this._resolverConfig = resolverConfig;
         this._sessionStatusDir = Path.Combine(homeDirectory, ".claude", "session-status");
         this._sessionsDir = Path.Combine(homeDirectory, ".claude", "sessions");
         this._projectsDir = Path.Combine(homeDirectory, ".claude", "projects");
@@ -539,7 +546,8 @@ public sealed class StatusReader : IDisposable
             heartbeatAt: heartbeat,
             cpuPercent: acc.CpuPercent,
             interruptedMarker: acc.InterruptedMarker,
-            now: now);
+            now: now,
+            config: this._resolverConfig);
 
         var snapshot = new SessionSnapshot(
             SessionId: acc.SessionId,
@@ -552,6 +560,12 @@ public sealed class StatusReader : IDisposable
             UpdatedAt: now);
 
         this.SessionUpdated?.Invoke(this, snapshot);
+    }
+
+    private static StateResolverConfig? LoadResolverConfigFromDefaultLocation(String homeDirectory)
+    {
+        var configPath = Path.Combine(homeDirectory, ".claude", "macro-claude.json");
+        return StateResolverConfig.TryLoadFromFile(configPath);
     }
 
     private static DateTimeOffset? Max(DateTimeOffset? a, DateTimeOffset? b)

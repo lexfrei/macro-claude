@@ -28,6 +28,9 @@
     <Compile Include="..\MacroClaudePlugin\src\Status\StateResolver.cs">
       <Link>Linked\StateResolver.cs</Link>
     </Compile>
+    <Compile Include="..\MacroClaudePlugin\src\Status\StateResolverConfig.cs">
+      <Link>Linked\StateResolverConfig.cs</Link>
+    </Compile>
     <Compile Include="..\MacroClaudePlugin\src\Status\SessionSnapshot.cs">
       <Link>Linked\SessionSnapshot.cs</Link>
     </Compile>
