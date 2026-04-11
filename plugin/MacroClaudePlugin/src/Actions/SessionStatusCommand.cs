@@ -57,8 +57,6 @@ public class SessionStatusCommand : PluginDynamicCommand
 
         PluginLog.Info($"focus requested for slot {slot} session {snapshot.SessionId} pid {snapshot.Pid}");
 
-        // Fire-and-forget — the Loupedeck runtime expects RunCommand to
-        // return immediately, and focus dispatch is best-effort.
         _ = FocusDispatcher
             .FocusAsync(snapshot.Pid, snapshot.Cwd, CancellationToken.None)
             .ContinueWith(
@@ -76,6 +74,18 @@ public class SessionStatusCommand : PluginDynamicCommand
                 System.Threading.Tasks.TaskScheduler.Default);
     }
 
+    protected override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize)
+    {
+        var slot = ParameterToSlot(actionParameter);
+        if (slot < 0 || !this._snapshotsBySlot.TryGetValue(slot, out var snapshot))
+        {
+            return DrawEmpty(imageSize);
+        }
+        return DrawSlot(snapshot, imageSize);
+    }
+
+    // Text fallback used in the command palette / tooltips where bitmaps
+    // are not shown. Mirrors the image content but as a plain string.
     protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize)
     {
         var slot = ParameterToSlot(actionParameter);
@@ -95,9 +105,47 @@ public class SessionStatusCommand : PluginDynamicCommand
             _ => "?",
         };
 
-        var elapsed = FormatElapsed(snapshot.Elapsed);
-        return $"{mark} {snapshot.ShortName}{Environment.NewLine}{elapsed}";
+        return $"{mark} {snapshot.ShortName}{Environment.NewLine}{FormatElapsed(snapshot.Elapsed)}";
     }
+
+    private static BitmapImage DrawEmpty(PluginImageSize imageSize)
+    {
+        using var builder = new BitmapBuilder(imageSize);
+        builder.Clear(new BitmapColor(30, 30, 30));
+        builder.DrawText("—", BitmapColor.White);
+        return builder.ToImage();
+    }
+
+    private static BitmapImage DrawSlot(SessionSnapshot snapshot, PluginImageSize imageSize)
+    {
+        using var builder = new BitmapBuilder(imageSize);
+        builder.Clear(BackgroundFor(snapshot.State));
+        var text = $"{LabelFor(snapshot.State)}{Environment.NewLine}{snapshot.ShortName}{Environment.NewLine}{FormatElapsed(snapshot.Elapsed)}";
+        builder.DrawText(text, BitmapColor.White);
+        return builder.ToImage();
+    }
+
+    private static BitmapColor BackgroundFor(SessionState state) => state switch
+    {
+        SessionState.Gone => new BitmapColor(30, 30, 30),       // dark gray
+        SessionState.Idle => new BitmapColor(30, 150, 70),      // green
+        SessionState.Working => new BitmapColor(30, 100, 200),  // blue
+        SessionState.Thinking => new BitmapColor(30, 180, 200), // cyan
+        SessionState.Stuck => new BitmapColor(220, 120, 30),    // orange
+        SessionState.Error => new BitmapColor(200, 50, 50),     // red
+        _ => new BitmapColor(30, 30, 30),
+    };
+
+    private static String LabelFor(SessionState state) => state switch
+    {
+        SessionState.Idle => "IDLE",
+        SessionState.Working => "WORK",
+        SessionState.Thinking => "THINK",
+        SessionState.Stuck => "STUCK",
+        SessionState.Error => "ERROR",
+        SessionState.Gone => "GONE",
+        _ => "?",
+    };
 
     private static String FormatElapsed(TimeSpan? duration)
     {
