@@ -60,20 +60,12 @@ public static class FocusDispatcher
             PluginLog.Info(
                 $"macro-claude: bridge confirmed VS Code ownership of pid {pid.ToString(System.Globalization.CultureInfo.InvariantCulture)} (workspaceRoot='{workspaceRoot}' name='{workspaceName}')");
 
-            // Path A (preferred): open the workspace root reported by
-            // the bridge via `vscode://file/<root>`. macOS
+            // Path A (preferred): open the workspace root reported
+            // by the bridge via `vscode://file/<root>`. macOS
             // LaunchServices routes the URL to the VS Code window
             // already holding that folder — including windows on
             // different fullscreen Spaces, which AppleScript AXRaise
             // cannot reach because Accessibility API is Space-local.
-            // We use the bridge-reported root and ONLY that root:
-            // claude's session cwd is often a subdirectory of the
-            // workspace, so an "open cwd" fallback would pop a new
-            // folder window rooted at the subdir instead of
-            // activating the existing window. If the bridge did not
-            // report a workspace root (single-file / untitled /
-            // empty window), skip this path entirely and try
-            // AppleScript AXRaise next.
             if (!String.IsNullOrEmpty(workspaceRoot)
                 && workspaceRoot.StartsWith('/')
                 && VSCodeUrlActivator.OpenWorkspace(workspaceRoot))
@@ -81,11 +73,34 @@ public static class FocusDispatcher
                 return FocusResult.VSCodeTerminal;
             }
 
-            // Path B: single-Space AXRaise via AppleScript. Works when
-            // all VS Code windows live in the same Space, so it is a
-            // sensible fallback for windows without a workspace root
-            // (untitled, single-file) — System Events can still match
-            // by window title even though LaunchServices cannot.
+            // Path A': cwd fallback for the "bridge matched the PID
+            // but workspaceFolders[0] is empty" case. Happens when
+            // the user has VS Code open with no Folder but the
+            // terminal that owns claude is sitting in a directory
+            // that the user has *separately* opened as a workspace
+            // in another VS Code window. `vscode://file/<cwd>`
+            // asks LaunchServices to route to that other window.
+            //
+            // Downside: if the claude cwd is not actually open
+            // anywhere, LaunchServices creates a new folder window
+            // rooted at it. That is an acceptable outcome — the
+            // user lands inside VS Code in the right directory,
+            // and it is still better than leaving them in the
+            // wrong application. The more common case (workspace
+            // already open somewhere) just works.
+            if (String.IsNullOrEmpty(workspaceRoot)
+                && !String.IsNullOrEmpty(cwd)
+                && cwd.StartsWith('/')
+                && VSCodeUrlActivator.OpenWorkspace(cwd))
+            {
+                return FocusResult.VSCodeTerminal;
+            }
+
+            // Path B: single-Space AXRaise via AppleScript. Works
+            // when all VS Code windows live in the same Space, so
+            // it is a sensible fallback when neither URL path
+            // worked — System Events can still match by window
+            // title even though LaunchServices cannot.
             if (!String.IsNullOrEmpty(workspaceName)
                 && AppleScriptActivator.RaiseCodeWindowByWorkspace(workspaceName))
             {

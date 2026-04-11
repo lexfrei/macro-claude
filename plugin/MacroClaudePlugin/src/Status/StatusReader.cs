@@ -309,12 +309,21 @@ public sealed class StatusReader : IDisposable
     }
 
     // FileSystemWatcher on macOS sits on top of FSEvents and routinely
-    // drops rapid Rename/Delete events, especially when hooks churn the
-    // session-status directory. That leaves ghost sessions in memory
-    // forever. This reconciliation sweep is cheap (one enumerate per
-    // second over a tiny directory) and catches everything the watcher
-    // missed: any session_id that no longer has a file on disk is
-    // removed from _bySessionId and the subscriber is notified.
+    // drops rapid Rename/Delete events, especially when hooks churn
+    // either of our source-of-truth directories. That leaves ghost
+    // sessions in memory forever. This reconciliation sweep is cheap
+    // (two directory enumerates per second, each tiny) and catches
+    // everything the watcher missed: any session_id that no longer
+    // has a file in EITHER the session-status directory OR the
+    // sessions/<pid>.json lifecycle directory is removed from
+    // _bySessionId and the subscriber is notified.
+    //
+    // The union is important: an accumulator created from a
+    // sessions/<pid>.json observation (before a hook event has
+    // landed a session-status file) would otherwise only disappear
+    // when its pid dies, which misses the case where the pid itself
+    // vanished without ReapDeadPidSessions noticing (pid reuse,
+    // stale zombie from an earlier Plugin instance, etc.).
     private void ReconcileSessionStatusDirectory()
     {
         if (this._bySessionId.IsEmpty)
@@ -325,17 +334,30 @@ public sealed class StatusReader : IDisposable
         HashSet<String> onDisk;
         try
         {
-            if (!Directory.Exists(this._sessionStatusDir))
+            onDisk = new HashSet<String>(StringComparer.Ordinal);
+
+            if (Directory.Exists(this._sessionStatusDir))
             {
-                onDisk = new HashSet<String>(StringComparer.Ordinal);
+                foreach (var file in Directory.EnumerateFiles(this._sessionStatusDir, "*.json"))
+                {
+                    var name = Path.GetFileNameWithoutExtension(file) ?? String.Empty;
+                    if (!String.IsNullOrEmpty(name))
+                    {
+                        onDisk.Add(name);
+                    }
+                }
             }
-            else
+
+            if (Directory.Exists(this._sessionsDir))
             {
-                onDisk = Directory
-                    .EnumerateFiles(this._sessionStatusDir, "*.json")
-                    .Select(p => Path.GetFileNameWithoutExtension(p) ?? String.Empty)
-                    .Where(n => !String.IsNullOrEmpty(n))
-                    .ToHashSet(StringComparer.Ordinal);
+                foreach (var file in Directory.EnumerateFiles(this._sessionsDir, "*.json"))
+                {
+                    var sessionId = TryReadSessionIdFromSessionsFile(file);
+                    if (!String.IsNullOrEmpty(sessionId))
+                    {
+                        onDisk.Add(sessionId);
+                    }
+                }
             }
         }
         catch (IOException)
@@ -370,6 +392,34 @@ public sealed class StatusReader : IDisposable
         }
     }
 
+    // Light-weight read of just the `sessionId` field from a
+    // sessions/<pid>.json lifecycle file — used by the reconcile
+    // sweep to check whether a session is still represented on
+    // disk without firing any of the heavier accumulator-update
+    // machinery.
+    private static String TryReadSessionIdFromSessionsFile(String path)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(File.ReadAllBytes(path));
+            if (doc.RootElement.TryGetProperty("sessionId", out var el)
+                && el.ValueKind == JsonValueKind.String)
+            {
+                return el.GetString() ?? String.Empty;
+            }
+        }
+        catch (IOException)
+        {
+        }
+        catch (JsonException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
+        return String.Empty;
+    }
+
     // -------------------------------------------------------------------
     // File readers — tolerant of partial writes and bad JSON.
     // -------------------------------------------------------------------
@@ -400,6 +450,15 @@ public sealed class StatusReader : IDisposable
             acc.Pid = pid;
             acc.Cwd = cwd;
             acc.DisplayName = name;
+
+            // A session seen through the lifecycle file is "tracked"
+            // by the reconcile sweep in the same way as one seen
+            // through a hook-written status file. Without this flag,
+            // an accumulator created here can never be reaped by the
+            // directory sweep, only by ReapDeadPidSessions which
+            // misses the pid-reuse / zombie-plugin cases.
+            acc.HasStatusFile = true;
+
             this._sessionIdByPid[pid] = sessionId;
         }
         catch (IOException)
