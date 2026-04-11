@@ -1,0 +1,65 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# Editors / IDEs
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/tasks.json
+.idea/
+*.swp
+*.swo
+*~
+
+# .NET build output
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+*.user
+*.userprefs
+*.suo
+*.userosscache
+*.sln.docstates
+.vs/
+project.lock.json
+project.fragment.lock.json
+artifacts/
+*.pfx
+
+# NuGet
+*.nupkg
+*.snupkg
+.nuget/
+packages/
+!packages/build/
+
+# Node / TypeScript
+node_modules/
+dist/
+out/
+*.tsbuildinfo
+.npm/
+.eslintcache
+.yarn/
+.pnp.*
+
+# VS Code extension package output
+*.vsix
+
+# Plugin package output
+*.lplug4
+
+# Logs
+*.log
+logs/
+
+# Local secrets / env
+.env
+.env.local
+*.local

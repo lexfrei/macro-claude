@@ -1,0 +1,59 @@
+{
+  "name": "macro-claude-bridge",
+  "displayName": "macro-claude VS Code Bridge",
+  "description": "Local HTTP bridge so the macro-claude plugin can focus VS Code integrated terminals that own Claude Code sessions.",
+  "version": "0.0.1",
+  "private": true,
+  "publisher": "lexfrei",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.95.0",
+    "node": ">=20"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "macroClaude.focusTerminalByPid",
+        "title": "macro-claude: Focus Terminal by PID"
+      }
+    ],
+    "configuration": {
+      "type": "object",
+      "title": "macro-claude Bridge",
+      "properties": {
+        "macroClaude.bridge.port": {
+          "type": "number",
+          "default": 0,
+          "description": "Port for local HTTP bridge. 0 means pick a free port automatically. The chosen port and auth token are written to ~/.claude/macro-claude-bridge.lock."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc --noEmit && esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --target=node20 --sourcemap",
+    "watch": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --target=node20 --sourcemap --watch",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src",
+    "lint:fix": "eslint src --fix",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "package": "vsce package --no-dependencies"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.15.0",
+    "@types/node": "^22.10.0",
+    "@types/vscode": "^1.95.0",
+    "@vscode/vsce": "^3.2.0",
+    "esbuild": "^0.24.0",
+    "eslint": "^9.15.0",
+    "prettier": "^3.4.0",
+    "typescript": "^5.7.0",
+    "typescript-eslint": "^8.16.0"
+  }
+}
