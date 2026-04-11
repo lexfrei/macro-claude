@@ -3,7 +3,9 @@ namespace Loupedeck.MacroClaudePlugin.Actions
 {
     using System;
     using System.Collections.Concurrent;
+    using System.Threading;
 
+    using Loupedeck.MacroClaudePlugin.Focus;
     using Loupedeck.MacroClaudePlugin.Status;
 
     // Parameterized dynamic command: one command, N action parameters
@@ -54,8 +56,25 @@ namespace Loupedeck.MacroClaudePlugin.Actions
                 return;
             }
 
-            // TODO: dispatch via FocusDispatcher once it lands.
             PluginLog.Info($"focus requested for slot {slot} session {snapshot.SessionId} pid {snapshot.Pid}");
+
+            // Fire-and-forget — the Loupedeck runtime expects RunCommand to
+            // return immediately, and focus dispatch is best-effort.
+            _ = FocusDispatcher
+                .FocusAsync(snapshot.Pid, snapshot.Cwd, CancellationToken.None)
+                .ContinueWith(
+                    t =>
+                    {
+                        if (t.IsFaulted && t.Exception != null)
+                        {
+                            PluginLog.Error(t.Exception, $"focus failed for pid {snapshot.Pid}");
+                        }
+                        else
+                        {
+                            PluginLog.Info($"focus result for pid {snapshot.Pid}: {t.Result}");
+                        }
+                    },
+                    System.Threading.Tasks.TaskScheduler.Default);
         }
 
         protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize)
