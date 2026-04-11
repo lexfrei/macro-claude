@@ -1,35 +1,88 @@
+#nullable enable
 namespace Loupedeck.MacroClaudePlugin
 {
     using System;
 
-    // This class contains the plugin-level logic of the Loupedeck plugin.
+    using Loupedeck.MacroClaudePlugin.Status;
 
+    // Plugin entry point. Owns the StatusReader lifecycle and routes
+    // session updates into slot assignments published on SlotBus.
     public class MacroClaudePlugin : Plugin
     {
-        // Gets a value indicating whether this is an API-only plugin.
         public override Boolean UsesApplicationApiOnly => true;
-
-        // Gets a value indicating whether this is a Universal plugin or an Application plugin.
         public override Boolean HasNoApplication => true;
 
-        // Initializes a new instance of the plugin class.
+        private StatusReader? _statusReader;
+        private SlotAssigner? _slotAssigner;
+
         public MacroClaudePlugin()
         {
-            // Initialize the plugin log.
             PluginLog.Init(this.Log);
-
-            // Initialize the plugin resources.
             PluginResources.Init(this.Assembly);
         }
 
-        // This method is called when the plugin is loaded.
         public override void Load()
         {
+            var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
+            this._slotAssigner = new SlotAssigner(maxSlots: 9);
+            this._statusReader = new StatusReader(home);
+            this._statusReader.SessionUpdated += this.OnSessionUpdated;
+            this._statusReader.SessionRemoved += this.OnSessionRemoved;
+
+            try
+            {
+                this._statusReader.Start();
+                PluginLog.Info("macro-claude: StatusReader started");
+            }
+            catch (Exception ex)
+            {
+                PluginLog.Error(ex, "macro-claude: StatusReader failed to start");
+            }
         }
 
-        // This method is called when the plugin is unloaded.
         public override void Unload()
         {
+            if (this._statusReader != null)
+            {
+                this._statusReader.SessionUpdated -= this.OnSessionUpdated;
+                this._statusReader.SessionRemoved -= this.OnSessionRemoved;
+                this._statusReader.Dispose();
+                this._statusReader = null;
+            }
+            this._slotAssigner = null;
+        }
+
+        private void OnSessionUpdated(Object? sender, SessionSnapshot snapshot)
+        {
+            var assigner = this._slotAssigner;
+            if (assigner == null)
+            {
+                return;
+            }
+            var slot = assigner.Ensure(snapshot.SessionId);
+            if (slot < 0)
+            {
+                // All slots occupied — ignore. A future version will scroll
+                // to additional profile pages.
+                return;
+            }
+            SlotBus.Publish(slot, snapshot);
+        }
+
+        private void OnSessionRemoved(Object? sender, String sessionId)
+        {
+            var assigner = this._slotAssigner;
+            if (assigner == null)
+            {
+                return;
+            }
+            var slot = assigner.Release(sessionId);
+            if (slot < 0)
+            {
+                return;
+            }
+            SlotBus.Publish(slot, null);
         }
     }
 }
