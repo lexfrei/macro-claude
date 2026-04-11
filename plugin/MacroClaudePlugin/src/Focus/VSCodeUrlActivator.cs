@@ -39,18 +39,27 @@ internal static class VSCodeUrlActivator
             return false;
         }
 
-        // vscode://file/<absolute-path> — no URL escaping needed for
-        // typical filesystem paths because `open` passes the argument
-        // through NSWorkspace unchanged. Spaces and unicode are fine.
-        // We do guard against a path that is not absolute since
-        // LaunchServices will reject it.
+        // Only absolute paths can be handed to vscode://file — the
+        // URL handler / LaunchServices reject anything else.
         if (!cwd.StartsWith('/'))
         {
             PluginLog.Warning($"macro-claude: VSCodeUrlActivator called with non-absolute cwd '{cwd}'");
             return false;
         }
 
-        var url = $"vscode://file{cwd}";
+        // Percent-encode each path segment before building the URL.
+        // Raw paths containing reserved URL characters (`#`, `?`, `%`
+        // and friends) are otherwise misparsed by LaunchServices —
+        // `#` becomes a fragment marker, `?` a query delimiter, etc.
+        // For a repository checked out at /Users/lex/code/bug#42 the
+        // unencoded URL would lose everything after `#` and VS Code
+        // would open /Users/lex/code/bug instead.
+        //
+        // Uri.EscapeDataString encodes each segment per RFC 3986
+        // unreserved-char rules, which matches what `open` and VS
+        // Code's URI parser expect. We keep the leading slash and
+        // rejoin with literal slashes to preserve the path structure.
+        var url = $"vscode://file{VSCodeUrlEncoder.EncodePath(cwd)}";
         try
         {
             using var process = new Process

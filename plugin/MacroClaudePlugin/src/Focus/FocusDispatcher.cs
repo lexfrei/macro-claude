@@ -66,11 +66,14 @@ public static class FocusDispatcher
             // already holding that folder — including windows on
             // different fullscreen Spaces, which AppleScript AXRaise
             // cannot reach because Accessibility API is Space-local.
-            // We prefer the bridge-reported root over the session
-            // `cwd` because claude may have been launched from a
-            // subdirectory of the workspace; using cwd there would
-            // pop open a brand-new window rooted at the subdirectory
-            // instead of activating the existing window.
+            // We use the bridge-reported root and ONLY that root:
+            // claude's session cwd is often a subdirectory of the
+            // workspace, so an "open cwd" fallback would pop a new
+            // folder window rooted at the subdir instead of
+            // activating the existing window. If the bridge did not
+            // report a workspace root (single-file / untitled /
+            // empty window), skip this path entirely and try
+            // AppleScript AXRaise next.
             if (!String.IsNullOrEmpty(workspaceRoot)
                 && workspaceRoot.StartsWith('/')
                 && VSCodeUrlActivator.OpenWorkspace(workspaceRoot))
@@ -78,19 +81,11 @@ public static class FocusDispatcher
                 return FocusResult.VSCodeTerminal;
             }
 
-            // Path A': cwd fallback — if the bridge did not report a
-            // workspace root (rare; happens for windows opened with
-            // no folder), fall back to the session snapshot's cwd.
-            if (!String.IsNullOrEmpty(cwd)
-                && cwd.StartsWith('/')
-                && VSCodeUrlActivator.OpenWorkspace(cwd))
-            {
-                return FocusResult.VSCodeTerminal;
-            }
-
             // Path B: single-Space AXRaise via AppleScript. Works when
             // all VS Code windows live in the same Space, so it is a
-            // sensible fallback when neither URL path worked.
+            // sensible fallback for windows without a workspace root
+            // (untitled, single-file) — System Events can still match
+            // by window title even though LaunchServices cannot.
             if (!String.IsNullOrEmpty(workspaceName)
                 && AppleScriptActivator.RaiseCodeWindowByWorkspace(workspaceName))
             {

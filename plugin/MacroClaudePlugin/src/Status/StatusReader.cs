@@ -255,17 +255,23 @@ public sealed class StatusReader : IDisposable
             return;
         }
 
-        foreach (var sessionId in this._bySessionId.Keys.ToArray())
+        var sessionIds = this._bySessionId.Keys.ToArray();
+        var flags = new Dictionary<String, Boolean>(StringComparer.Ordinal);
+        foreach (var sessionId in sessionIds)
         {
-            if (onDisk.Contains(sessionId))
+            if (this._bySessionId.TryGetValue(sessionId, out var acc))
             {
-                continue;
+                flags[sessionId] = acc.HasStatusFile;
             }
-            if (this._bySessionId.TryRemove(sessionId, out var acc))
+        }
+
+        foreach (var sessionId in ReconcileDecision.SessionsToReap(sessionIds, flags, onDisk))
+        {
+            if (this._bySessionId.TryRemove(sessionId, out var removed))
             {
-                if (acc.Pid > 0)
+                if (removed.Pid > 0)
                 {
-                    this._sessionIdByPid.TryRemove(acc.Pid, out _);
+                    this._sessionIdByPid.TryRemove(removed.Pid, out _);
                 }
                 this.SessionRemoved?.Invoke(this, sessionId);
             }
@@ -408,6 +414,14 @@ public sealed class StatusReader : IDisposable
             }
 
             var acc = this._bySessionId.GetOrAdd(sessionId, _ => new Accumulator { SessionId = sessionId });
+
+            // Mark the accumulator as hook-backed. ReconcileSessionStatusDirectory
+            // will only consider it eligible for removal once this
+            // flag is set — before that, the accumulator might have
+            // come from a sessions/<pid>.json observation and would
+            // get killed on the very next tick, leaving the user
+            // with a disappeared button for a live session.
+            acc.HasStatusFile = true;
 
             // Resolve pid from ~/.claude/sessions/<pid>.json when we
             // still do not have one. Hook events race ahead of the
@@ -758,5 +772,13 @@ public sealed class StatusReader : IDisposable
         public DateTimeOffset? IdleSince { get; set; }
         public Double CpuPercent { get; set; }
         public Boolean InterruptedMarker { get; set; }
+
+        // True once we have read a hook-written session-status file
+        // for this session at least once. Reconciliation only reaps
+        // sessions where this flag is set — otherwise an accumulator
+        // created from ~/.claude/sessions/<pid>.json (seen before
+        // the first hook event) would be killed on the next tick,
+        // before the hook has had a chance to land its status file.
+        public Boolean HasStatusFile { get; set; }
     }
 }
