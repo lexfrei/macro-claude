@@ -80,7 +80,14 @@ case "${event}" in
     # is Idle, everything else (permission, approval, plan) is
     # Waiting. Match is case-insensitive and tolerates minor
     # wording drift between Claude Code versions.
-    case "${message,,}" in
+    #
+    # Lowercase via `tr` rather than `${message,,}` because the
+    # latter is a Bash 4+ feature and /usr/bin/env bash on stock
+    # macOS is still 3.2. Users without a Homebrew bash would
+    # otherwise hit "bad substitution" and the hook would stop
+    # updating status files entirely on every Notification event.
+    message_lc="$(printf '%s' "${message}" | tr '[:upper:]' '[:lower:]')"
+    case "${message_lc}" in
       *"waiting for your input"*)
         # Same semantic as Stop — turn done, user has control.
         status="idle"
