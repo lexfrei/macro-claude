@@ -228,11 +228,14 @@ src/
 ├── Actions/
 │   └── SessionStatusCommand.cs    PluginDynamicCommand with 9 slot parameters
 ├── Focus/
-│   ├── FocusDispatcher.cs         VS Code bridge HTTP + iTerm2 app activate
-│   └── NativeActivator.cs         P/Invoke libobjc.A.dylib
+│   ├── FocusDispatcher.cs         VS Code → iTerm2 session → iTerm2 app cascade
+│   ├── ITerm2Client.cs            iTerm2 Python API protobuf client (Unix socket + WS)
+│   └── NativeActivator.cs         P/Invoke libobjc.A.dylib for app activate
 ├── Helpers/
 │   ├── PluginLog.cs               thin static adapter over PluginLogFile
 │   └── PluginResources.cs         thin static adapter over Assembly resources
+├── Proto/
+│   └── api.proto                  vendored from gnachman/iTerm2, 1642 lines
 ├── Status/
 │   ├── SessionSnapshot.cs         immutable record + SessionState enum
 │   ├── StateResolver.cs           pure function, the state machine
@@ -241,13 +244,57 @@ src/
 │   └── SlotBus.cs                 static event bus bridging Plugin.Load ↔ Command
 ├── MacroClaudePlugin.cs           entry point (Plugin subclass)
 ├── MacroClaudeApplication.cs      REQUIRED STUB — see gotcha #1
-├── MacroClaudePlugin.csproj
+├── MacroClaudePlugin.csproj       refs PluginApi + Google.Protobuf + Grpc.Tools
 ├── Directory.Build.props          imports the repo-root Directory.Build.props
 ├── .editorconfig                  root=false, tune Logitech conventions locally
 └── package/metadata/
     ├── LoupedeckPackage.yaml
     └── Icon256x256.png            3×3 grid in the state palette
 ```
+
+### iTerm2 protobuf client (`Focus/ITerm2Client.cs`)
+
+Session-level focus for iTerm2 runs over the Python API's protobuf
+WebSocket, tunnelled through the Unix domain socket at
+`~/Library/Application Support/iTerm2/private/socket`. Key points:
+
+- `ClientWebSocket` does not accept a custom transport, so the client
+  opens a raw `Socket(AddressFamily.Unix, ...)`, writes a manual HTTP/1.1
+  Upgrade handshake with the `api.iterm2.com` subprotocol, reads the
+  101 response line, and then calls `WebSocket.CreateFromStream` on the
+  underlying `NetworkStream`. The handshake includes the iTerm2-specific
+  headers `x-iterm2-library-version`, `x-iterm2-disable-auth-ui`,
+  `x-iterm2-cookie`, and `x-iterm2-key`.
+- Authentication uses the iTerm2 AppleScript flow
+  (`tell application "iTerm2" to request cookie and key for app named
+  "macro-claude"`) invoked **once** via `osascript` on first use, cached
+  in a static field protected by a mutex. Every subsequent button press
+  is entirely zero-exec after the cache is warm. We do not attempt the
+  `disable-automation-auth` root file path — it needs a one-time sudo
+  that the plugin cannot trigger.
+- Proto codegen is handled by `Grpc.Tools` at build time. The
+  `<Protobuf Include="Proto/api.proto" GrpcServices="None" />` item
+  generates `obj/Debug/Api.cs` (~54 K lines) into the `Iterm2` CLR
+  namespace (derived from `package iterm2;` in the .proto).
+- Focus-by-PID walks every window/tab/session via `ListSessionsRequest`,
+  issues a `VariableRequest` for the `jobPid` variable on each session,
+  and sends an `ActivateRequest` with `order_window_front=true`,
+  `select_tab=true`, `select_session=true` on the first match.
+- Failures are silent — every IO/WebSocket/socket exception returns
+  `false` so `FocusDispatcher` falls through to the app-level
+  `NativeActivator.ActivateByBundleId("com.googlecode.iterm2")` path.
+
+If you touch `ITerm2Client`, the most common ways to break it:
+
+1. **Modifying the handshake without checking iTerm2's source.** The
+   server is strict about header order and subprotocol — diff against
+   `iTerm2/api/library/python/iterm2/iterm2/connection.py` if in doubt.
+2. **Caching the cookie forever.** iTerm2 revokes the cookie on its
+   own restart. Cache scope is the plugin process lifetime only —
+   LPS reloads reset it automatically.
+3. **Bumping the `DefaultTimeout`.** 3 seconds is chosen so the button
+   press feels instant. A stuck cookie fetch would otherwise freeze
+   `RunCommand` for the full timeout. Keep it tight.
 
 ### `plugin/MacroClaudePlugin.Tests/`
 
@@ -348,10 +395,6 @@ cat ~/.claude/session-status/TEST.json
   assembly is 30 MB and is not needed for the small set of AppKit calls
   we make — P/Invoke to `libobjc.A.dylib` gives us the same result with
   ~120 lines of C# and zero additional packages.
-- **No iTerm2 session-level focus yet.** The protobuf Unix-socket client
-  for `api.iterm2.com` is tracked as v2 work. For now iTerm2 focus falls
-  through to a bundle-id activate so the user lands in iTerm2 and picks
-  the tab manually.
 - **No ProjectReference from tests to plugin.** See "linked sources"
   above.
 - **No forced `Nullable=disable` in any source file.** Do not add
