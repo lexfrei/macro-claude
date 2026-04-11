@@ -1,5 +1,9 @@
 # macro-claude
 
+[![CI](https://github.com/lexfrei/macro-claude/actions/workflows/ci.yml/badge.svg)](https://github.com/lexfrei/macro-claude/actions/workflows/ci.yml)
+[![Release](https://github.com/lexfrei/macro-claude/actions/workflows/release.yml/badge.svg)](https://github.com/lexfrei/macro-claude/actions/workflows/release.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 Live status of every running Claude Code session on a Logitech MX Creative
 Console, with single-key focus to the terminal that owns the session.
 
@@ -239,10 +243,66 @@ assigned session when one appears; empty slots show a placeholder.
 ## Tests and linting
 
 ```bash
-dotnet test plugin/MacroClaudePlugin.Tests/MacroClaudePlugin.Tests.csproj
-make lint-shell        # shellcheck
-make lint-vscode       # eslint + tsc --noEmit
+make test              # dotnet test on pure logic (41 tests)
+make lint-shell        # shellcheck hooks
+make lint-vscode       # eslint + tsc --noEmit on the vscode extension
 ```
+
+## Continuous integration
+
+The `.github/workflows/ci.yml` pipeline runs on every push to `main` and
+every pull request with three parallel jobs on `ubuntu-latest`:
+
+1. **shellcheck hooks** — strict mode (`--severity=style --enable=all`)
+2. **dotnet test (pure logic)** — restore, build, and run xUnit tests
+   against `plugin/MacroClaudePlugin.Tests/`. Test results upload as
+   `.trx` artifacts.
+3. **vscode-extension** — `npm ci`, `tsc --noEmit`, eslint
+   strict-type-checked, `esbuild` compile, and `vsce package` sanity
+   check. The resulting VSIX uploads as a workflow artifact on every
+   green run, so you always have a fresh extension build to grab.
+
+**What CI does NOT build:** the macropad plugin itself. The plugin csproj
+references `PluginApi.dll` from a macOS-only Logi Plugin Service install
+(`/Applications/Utilities/LogiPluginService.app/Contents/MonoBundle/`).
+Automating an LPS installation inside a GitHub-hosted macOS runner is
+brittle, so plugin builds stay local. CI still validates everything that
+can be validated without `PluginApi.dll` — which is all the pure logic
+under test.
+
+## Releases
+
+Releases are cut by pushing a tag matching `v*`:
+
+```bash
+# make sure you're green locally
+make test
+make lint
+
+# tag and push
+git tag --sign v1.0.0 --message "Release v1.0.0"
+git push origin v1.0.0
+```
+
+That triggers `.github/workflows/release.yml`, which re-runs the full
+CI gate, builds the VSIX, creates a GitHub release with installation
+notes, and attaches the `macro-claude-bridge-*.vsix` to it.
+
+### Adding the `.lplug4` to the release
+
+Because CI cannot build the macropad plugin, the `.lplug4` must be
+attached manually from a local macOS machine after the release workflow
+completes:
+
+```bash
+# from the tagged commit, on a machine with LPS installed
+make release-plugin               # produces dist/MacroClaudePlugin.lplug4
+make release-upload TAG=v1.0.0    # uploads everything in dist/ to the release
+```
+
+`make release-upload` uses `gh release upload --clobber` so it is safe
+to re-run. `make release` is an umbrella target that builds both the
+plugin and the extension into `dist/` in one step.
 
 ## Troubleshooting
 
