@@ -19,12 +19,53 @@ namespace Loupedeck.MacroClaudePlugin.Status;
 // live instance.
 internal static class SlotBus
 {
+    // Upper bound on slot indices the plugin is willing to track.
+    // Must stay in sync with the number of concrete ClaudeSlotNCommand
+    // classes under src/Actions/ and with SlotAssigner.maxSlots in
+    // MacroClaudePlugin.Load. Any Publish call outside this range is
+    // rejected — this guards against zombie SlotAssigner instances
+    // from a previous Plugin.Load that never got Unload'd, which can
+    // otherwise corrupt SlotBus with stale mappings.
+    public const Int32 ValidSlotCount = 9;
+
     private static readonly ConcurrentDictionary<Int32, SessionSnapshot> Snapshots = new();
+    private static readonly Object OwnerLock = new();
+    private static Guid _currentOwner = Guid.Empty;
 
     public static event Action<Int32, SessionSnapshot?>? SlotChanged;
 
-    public static void Publish(Int32 slot, SessionSnapshot? snapshot)
+    // Called by MacroClaudePlugin.Load to become the sole authorised
+    // publisher on the bus. Any previous owner's token stops being
+    // valid, so a zombie Plugin instance that survived an incomplete
+    // LPS Unload can no longer publish into SlotBus. The snapshot
+    // store is wiped so the new owner starts with a clean slate;
+    // subsequent Publish calls from the new owner repopulate it.
+    public static Guid AcquireOwnership()
     {
+        var token = Guid.NewGuid();
+        lock (OwnerLock)
+        {
+            _currentOwner = token;
+            Snapshots.Clear();
+        }
+        PluginLog.Info($"macro-claude: SlotBus ownership acquired by token {token}");
+        return token;
+    }
+
+    public static void Publish(Guid ownerToken, Int32 slot, SessionSnapshot? snapshot)
+    {
+        if (ownerToken != _currentOwner)
+        {
+            // Zombie publisher from a previous Plugin.Load — silently
+            // drop. Not logged per-call because it would be a flood.
+            return;
+        }
+        if (slot is < 0 or >= ValidSlotCount)
+        {
+            PluginLog.Warning(
+                $"macro-claude: SlotBus.Publish rejected out-of-range slot {slot.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+            return;
+        }
         if (snapshot is null)
         {
             Snapshots.TryRemove(slot, out _);
@@ -38,4 +79,6 @@ internal static class SlotBus
 
     public static SessionSnapshot? TryGetSnapshot(Int32 slot)
         => Snapshots.TryGetValue(slot, out var snap) ? snap : null;
+
+    public static Int32 SnapshotCount => Snapshots.Count;
 }

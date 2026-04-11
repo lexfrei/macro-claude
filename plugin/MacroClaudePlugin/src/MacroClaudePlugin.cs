@@ -13,6 +13,7 @@ public class MacroClaudePlugin : Plugin
 
     private StatusReader? _statusReader;
     private SlotAssigner? _slotAssigner;
+    private Guid _busToken = Guid.Empty;
 
     public MacroClaudePlugin()
     {
@@ -24,9 +25,18 @@ public class MacroClaudePlugin : Plugin
     {
         var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 
-        // 27 = three full MX Creative Console profile pages. See
-        // SessionStatusCommand.MaxSlots for rationale.
-        this._slotAssigner = new SlotAssigner(maxSlots: 27);
+        // Nine = one MX Creative Console profile page, matching the
+        // nine ClaudeSlot1Command..ClaudeSlot9Command classes in
+        // src/Actions/. If you add more slot commands, bump this.
+        this._slotAssigner = new SlotAssigner(maxSlots: SlotBus.ValidSlotCount);
+
+        // Claim exclusive ownership of SlotBus. Any previous Plugin
+        // instance that LPS failed to fully unload still has its old
+        // token and will be silently rejected from publishing into
+        // the bus. The snapshot store is wiped so stale zombie entries
+        // never reach subscribers after a reload.
+        this._busToken = SlotBus.AcquireOwnership();
+
         this._statusReader = new StatusReader(home);
         this._statusReader.SessionUpdated += this.OnSessionUpdated;
         this._statusReader.SessionRemoved += this.OnSessionRemoved;
@@ -52,6 +62,7 @@ public class MacroClaudePlugin : Plugin
             this._statusReader = null;
         }
         this._slotAssigner = null;
+        this._busToken = Guid.Empty;
     }
 
     private void OnSessionUpdated(Object? sender, SessionSnapshot snapshot)
@@ -71,7 +82,7 @@ public class MacroClaudePlugin : Plugin
         }
         PluginLog.Verbose(
             $"macro-claude: session {snapshot.SessionId} → slot {slot} state={snapshot.State} name={snapshot.ShortName}");
-        SlotBus.Publish(slot, snapshot);
+        SlotBus.Publish(this._busToken, slot, snapshot);
     }
 
     private void OnSessionRemoved(Object? sender, String sessionId)
@@ -87,6 +98,6 @@ public class MacroClaudePlugin : Plugin
             return;
         }
         PluginLog.Verbose($"macro-claude: session {sessionId} removed from slot {slot}");
-        SlotBus.Publish(slot, null);
+        SlotBus.Publish(this._busToken, slot, null);
     }
 }
