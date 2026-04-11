@@ -63,16 +63,30 @@ Claude Code CLI ─┬─ Stop / UserPromptSubmit / Pre/PostToolUse / StopFailur
                          SessionSnapshot (state + elapsed)
                                    │
                                    ▼
-                 SessionStatusCommand.GetCommandImage(...) → 80×80 PNG
+                 ClaudeSlotNCommand.GetCommandImage(...) → 80×80 PNG
                                    │
                                    ▼
-                         pressed → FocusDispatcher
+                         pressed → FocusDispatcher cascade
                                    │
-                   ┌───────────────┼───────────────┐
-                   ▼                               ▼
-        VS Code bridge extension          NativeActivator (libobjc)
-        POST /focus {pid}                 NSRunningApplication.activate
-        → terminal.show()                 → raises iTerm2 window
+       ┌───────────────────────────┼────────────────────────┐
+       ▼                           ▼                        ▼
+VS Code bridge (HTTP)      ITerm2Client (protobuf)   NativeActivator
+POST /focus {pid}          over Unix socket,         (libobjc)
+→ terminal.show() in       session ActivateRequest   NSRunningApplication
+  owning window            by jobPid                 .activate — plain
+       │                           │                  app-level raise
+       ▼                           ▼                        ▲
+VSCodeUrlActivator         ITerm2AppleScriptActivator        │
+/usr/bin/open              osascript to iTerm2               │
+vscode://file/<root>       dictionary, select tab            │
+(reaches windows in        by tty — reaches sessions         │
+ other fullscreen          in other fullscreen Spaces        │
+ Spaces)                                                     │
+       │                                                     │
+       ▼                                                     │
+AppleScriptActivator ────────────────────────────────────────┘
+System Events AXRaise by window title
+(single-Space fallback)
 ```
 
 ### The four signals behind every state
@@ -137,23 +151,49 @@ project-wide:
 
 Key classes:
 
-- `Status/SessionSnapshot` — immutable record of a resolved session
+- `Status/SessionSnapshot` — immutable record of a resolved session,
+  including the worktree-aware `RepoName`
 - `Status/StateResolver` — pure function, the state machine itself
 - `Status/StatusReader` — `FileSystemWatcher` on two directories, CPU
   poller on a 1 Hz timer, transcript mtime + interrupt-marker scanner,
-  emits `SessionSnapshot` via events
+  a reconciliation sweep that drops sessions whose files disappear
+  behind FSEvents' back, and a pid resolver that retries the sessions
+  directory when hook events race ahead of Claude Code writing
+  `sessions/<pid>.json`. Emits `SessionSnapshot` via events.
 - `Status/SlotAssigner` — thread-safe first-come first-served assignment
   of `session_id → slot index` (0..8)
-- `Status/SlotBus` — static event bus used to bridge the gap between
-  `Plugin.Load` and the `PluginDynamicCommand` instance
-- `Actions/SessionStatusCommand` — `PluginDynamicCommand` with 9 slot
-  parameters. Each parameter renders an 80×80 bitmap via `BitmapBuilder`
-  and dispatches `RunCommand` through `FocusDispatcher`
-- `Focus/FocusDispatcher` — routes to VS Code HTTP bridge or iTerm2
-  app-level activate
-- `Focus/NativeActivator` — minimal P/Invoke bridge to `libobjc.A.dylib`
-  for `NSRunningApplication.activateWithOptions:` — no `osascript`,
-  no `net8.0-macos` workload
+- `Status/SlotBus` — static event bus between `Plugin.Load` and the
+  nine slot commands. Protected by an owner token so a zombie Plugin
+  instance that LPS failed to fully unload cannot corrupt the
+  snapshot store after a reload.
+- `Status/GitRepoResolver` — filesystem-only resolution of the main
+  worktree basename from a session cwd, so buttons for a git
+  worktree show the repo name instead of the branch
+- `Actions/SlotCommandBase` + nine `ClaudeSlot1Command..ClaudeSlot9Command`
+  subclasses — each is a separate `PluginDynamicCommand` pinned to a
+  fixed slot index, because the MX Creative Keypad UI in Logi
+  Options+ does not expand `AddParameter` into separate draggable
+  entries the way the Loupedeck Live UI does
+- `Focus/FocusDispatcher` — the five-path cascade below
+- `Focus/NativeActivator` — P/Invoke bridge to `libobjc.A.dylib` for
+  `NSRunningApplication.activateWithOptions:`. Used for plain
+  bundle-level activation, and as the dead-last fallback when the
+  URL-scheme and AppleScript paths below all fail
+- `Focus/VSCodeUrlActivator` — shells out to `/usr/bin/open
+  vscode://file/<workspaceRoot>`. macOS LaunchServices routes the URL
+  to the existing VS Code window holding that folder, including
+  windows on different fullscreen Spaces (which AX API cannot reach)
+- `Focus/AppleScriptActivator` — System Events `AXRaise` by window
+  title. Used as a single-Space fallback for VS Code when the URL
+  path cannot determine the workspace root
+- `Focus/ITerm2Client` — protobuf over the iTerm2 Python API Unix
+  socket, primary path for iTerm2 session-level focus **if** the
+  user has turned the Python API on in iTerm2 Settings
+- `Focus/ITerm2AppleScriptActivator` — `osascript` to iTerm2's own
+  AppleScript dictionary. Zero-configuration fallback used when the
+  Python API is off; walks window/tab/session by TTY and selects the
+  matching session. Works across fullscreen Spaces because the
+  AppleScript commands run inside iTerm2's own process.
 
 ### plugin/MacroClaudePlugin.Tests/
 
@@ -173,8 +213,19 @@ VS Code extension in TypeScript, written against strict `tsconfig.json`
 
 Publishes a local HTTP bridge on a random port. Per-window lock files
 live at `~/.claude/macro-claude-bridge/<sessionId>.lock` with an auth
-token. `POST /focus {pid: number}` finds the terminal via
-`vscode.window.terminals`, calls `terminal.show()`, and returns.
+token; stale locks from crashed extension hosts are cleaned up on
+next activation. `POST /focus {pid: number}` walks the target PID's
+ancestor chain via `ps -axo pid=,ppid=` and matches against every
+integrated terminal's shell PID **and** this window's own extension
+host PID (for sessions launched by the Anthropic Claude Code VS Code
+extension — those children live under the extension host, not a
+shell). On a match it returns `{focused, terminalName, workspaceName,
+workspaceRoot}`; the plugin then asks `open vscode://file/<root>`
+to raise the correct window, which works across fullscreen Spaces.
+For multi-root `.code-workspace` windows it returns the path to the
+`.code-workspace` file instead of the first folder, so the URL
+activates the real multi-root workspace rather than a new
+single-folder window.
 
 ## Runtime requirements
 
@@ -183,13 +234,16 @@ token. `POST /focus {pid: number}` finds the terminal via
   with Logi Plugin Service running and an MX Creative Console connected
 - Claude Code CLI 2.x with hooks configured
 - `jq` — used by the bash hook script. `brew install jq` if not present.
-- Optional: VS Code with the companion extension for integrated-terminal
-  focus
-- Optional: iTerm2 with *Settings → General → Magic → Enable Python API*
-  turned on for session-level focus (tab + split). Without the API on,
-  the plugin falls back to app-level activate. On first focus request,
-  iTerm2 will prompt once to allow macro-claude access to its API —
-  accept it; the cookie is cached in the plugin process until reload.
+- Optional: VS Code with the companion extension (in `vscode-extension/`)
+  for point-accurate terminal focus. Works for both terminal-based
+  Claude sessions and the Anthropic Claude Code VS Code extension.
+- Optional: iTerm2. Session-level focus works out of the box via
+  AppleScript — *no Python API setup required*. macOS may prompt
+  once for Accessibility / Automation permission for Logi Plugin
+  Service on first use; accept it. If you prefer the protobuf path,
+  turning on *Settings → General → Magic → Enable Python API* lets
+  the plugin use `ITerm2Client` first, which is a hair faster per
+  press. Either path reaches fullscreen iTerm2 windows correctly.
 
 ## Build requirements
 
@@ -376,28 +430,48 @@ The most common cause is that the assembly has no concrete
 for universal plugins. Make sure `MacroClaudeApplication.cs` exists and
 extends `ClientApplication`.
 
-**Pressing a key does nothing for VS Code.** Make sure the companion
-extension is installed and that VS Code is open. Check
-`~/.claude/macro-claude-bridge/` for a `<sessionId>.lock` file — if
-missing, the extension did not activate. Open *Output → Extension Host*
-in VS Code.
+**Pressing a key lands on a different VS Code window than the
+target session.** The companion extension is missing or stale; the
+plugin fell through to bundle-level activate which always picks the
+most-recently-used window. Check:
 
-**Pressing a key raises iTerm2 but lands on the wrong tab.** This
-means the plugin fell through to app-level activate because
-session-level focus failed. Check:
+1. `~/.claude/macro-claude-bridge/` contains a `<sessionId>.lock`
+   for each VS Code window you have open. Missing means that window's
+   extension did not activate — open *Output → Extension Host* in
+   that window. Stale extra locks from crashed hosts are cleaned up
+   automatically on next extension activation.
+2. The companion extension is actually installed in VS Code. Run
+   `code --list-extensions | grep macro-claude`.
+3. After an upgrade, *all* open VS Code windows need **Developer:
+   Reload Window** (⌘⇧P) so the new extension code gets loaded in
+   each extension host.
 
-1. iTerm2 *Settings → General → Magic → Enable Python API* is on.
-2. `~/Library/Application Support/iTerm2/private/socket` exists
-   (created by iTerm2 when the API is enabled and iTerm2 is running).
-3. On first focus request iTerm2 shows a permission prompt asking to
-   allow `macro-claude` access — accept it. The cookie is cached in
-   the plugin process for its lifetime; if LPS reloads the plugin, a
-   new prompt appears on next press.
-4. The target Claude Code process is actually the **foreground** job
-   of an iTerm2 session. `ITerm2Client` matches by the iTerm2
-   `jobPid` variable, which is the session's current foreground PID.
-   If Claude Code is backgrounded via `&` or inside a tmux session,
-   the match will fail.
+**Pressing a key opens a *new* VS Code window instead of activating
+the existing one.** The `workspaceRoot` returned by the bridge does
+not match any window that is currently open with that folder. For
+single-folder windows this can happen when Claude Code was launched
+from a subdirectory of the workspace root — the session's `cwd`
+points at the subdir, and LaunchServices opens that subdir as a new
+window. The fix is in the extension: reload the VS Code window so
+the extension returns the real `workspaceFolders[0]` fsPath (or, for
+multi-root windows, the path to the `.code-workspace` file) instead
+of `cwd`.
+
+**Pressing a key raises iTerm2 but lands on the wrong tab.** Usually
+fixes itself on LPS reload. If it keeps happening:
+
+1. Check *System Settings → Privacy & Security → Automation* and
+   make sure `Logi Plugin Service` is allowed to control `iTerm2`
+   and `System Events`.
+2. Check that `ps -o tty= -p <claude pid>` returns the tty the
+   target session actually owns. If it returns `?`, the target
+   process has no controlling terminal (e.g. a background
+   subprocess) and AppleScript matching will not find it.
+3. If you have the Python API turned on, check the
+   `ITerm2Client.FocusSessionByPidAsync` path by enabling verbose
+   LPS logs — `jobPid` matching fails for Claude Code running
+   inside tmux or any shell where `claude` is not the foreground
+   job.
 
 **Everything is off by one second.** All timestamps in
 `~/.claude/session-status/` are Unix seconds, not milliseconds. The

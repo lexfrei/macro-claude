@@ -141,7 +141,7 @@ public static class FocusDispatcher
             return FocusResult.ITerm2AppOnly;
         }
 
-        // 4. VS Code app-level activate — last-chance fallback used
+        // 5. VS Code app-level activate — last-chance fallback used
         //    when the companion extension is not installed yet, or the
         //    bridge lock file for this window is stale. Raises the VS
         //    Code window to the foreground without knowing which
@@ -153,7 +153,7 @@ public static class FocusDispatcher
             return FocusResult.VSCodeAppOnly;
         }
 
-        // 5. Unknown — surface so caller can log.
+        // 6. Unknown — surface so caller can log.
         _ = cwd;
         return FocusResult.NotFound;
     }

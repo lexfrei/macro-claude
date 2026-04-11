@@ -126,7 +126,7 @@ internal static class ITerm2AppleScriptActivator
         //      tty property suffix. iTerm2's `tty` returns the full
         //      path (e.g. "/dev/ttys000"); we match by suffix so we
         //      do not care about the "/dev/tty" prefix.
-        //   3. On match, `tell w to select t` followed by
+        //   3. On the FIRST match, `tell w to select t` followed by
         //      `tell t to select s`. The first switches the active
         //      tab of the owning window; the second switches the
         //      active split inside that tab. Calling `select s`
@@ -134,13 +134,20 @@ internal static class ITerm2AppleScriptActivator
         //      tab unchanged and the target session ends up
         //      selected inside a hidden tab. Tested against iTerm2
         //      3.5.x on macOS 15.
-        //   4. Return "matched=1" or "matched=0" for diagnostics.
+        //   4. Bail out of all three nested loops with `exit repeat`
+        //      once matched so we do not keep select'ing additional
+        //      sessions on unrelated tabs (select is idempotent for
+        //      the target, but wasting cycles causes visible flicker
+        //      if there are many tabs open).
+        //   5. Return "matched=1" or "matched=0" for diagnostics.
         return
             "tell application \"iTerm2\"\n"
             + "    activate\n"
             + "    set matched to 0\n"
             + "    repeat with w in windows\n"
+            + "        if matched is 1 then exit repeat\n"
             + "        repeat with t in tabs of w\n"
+            + "            if matched is 1 then exit repeat\n"
             + "            repeat with s in sessions of t\n"
             + "                try\n"
             + "                    set sessionTty to tty of s\n"
@@ -148,6 +155,7 @@ internal static class ITerm2AppleScriptActivator
             + "                        tell w to select t\n"
             + "                        tell t to select s\n"
             + "                        set matched to 1\n"
+            + "                        exit repeat\n"
             + "                    end if\n"
             + "                end try\n"
             + "            end repeat\n"
@@ -182,6 +190,13 @@ internal static class ITerm2AppleScriptActivator
                 return false;
             }
 
+            // Drain stdout/stderr asynchronously before blocking on
+            // WaitForExit, otherwise a full OS pipe buffer can
+            // deadlock the child. Same reasoning as
+            // AppleScriptActivator.
+            var stdoutTask = process.StandardOutput.ReadToEndAsync();
+            var stderrTask = process.StandardError.ReadToEndAsync();
+
             process.StandardInput.Write(script);
             process.StandardInput.Close();
 
@@ -201,16 +216,29 @@ internal static class ITerm2AppleScriptActivator
                 return false;
             }
 
+            // Synchronise with the async stdout/stderr flush — the
+            // timed WaitForExit overload can return before the child's
+            // output has been fully written to the redirected streams.
+            try
+            {
+                process.WaitForExit();
+            }
+            catch (InvalidOperationException)
+            {
+                // Already exited / disposed — safe to continue.
+            }
+
+            var stdout = SafeResult(stdoutTask).Trim();
+            var stderr = SafeResult(stderrTask).Trim();
+
             if (process.ExitCode == 0)
             {
-                var stdout = process.StandardOutput.ReadToEnd().Trim();
                 PluginLog.Info($"macro-claude: iTerm2 AppleScript for tty {ttySuffix} → {stdout}");
                 return stdout == "matched=1";
             }
 
-            var stderr = process.StandardError.ReadToEnd();
             PluginLog.Warning(
-                $"macro-claude: iTerm2 AppleScript exited {process.ExitCode.ToString(System.Globalization.CultureInfo.InvariantCulture)}: {stderr.Trim()}");
+                $"macro-claude: iTerm2 AppleScript exited {process.ExitCode.ToString(System.Globalization.CultureInfo.InvariantCulture)}: {stderr}");
             return false;
         }
         catch (System.ComponentModel.Win32Exception ex)
@@ -222,6 +250,22 @@ internal static class ITerm2AppleScriptActivator
         {
             PluginLog.Error(ex, "macro-claude: osascript (iTerm2) IO error");
             return false;
+        }
+    }
+
+    private static String SafeResult(System.Threading.Tasks.Task<String> task)
+    {
+        try
+        {
+            return task.GetAwaiter().GetResult() ?? String.Empty;
+        }
+        catch (System.IO.IOException)
+        {
+            return String.Empty;
+        }
+        catch (OperationCanceledException)
+        {
+            return String.Empty;
         }
     }
 }

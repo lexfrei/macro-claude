@@ -114,10 +114,20 @@ internal static class AppleScriptActivator
                 return false;
             }
 
+            // Start draining stdout/stderr asynchronously BEFORE we
+            // block on WaitForExit. If the child writes enough output
+            // to fill the OS pipe buffer (~64 KB on macOS) while we
+            // sit in WaitForExit, the write blocks and the process
+            // never exits → deadlock. Pre-starting the read avoids
+            // that and also guarantees we capture everything the
+            // child wrote.
+            var stdoutTask = process.StandardOutput.ReadToEndAsync();
+            var stderrTask = process.StandardError.ReadToEndAsync();
+
             process.StandardInput.Write(script);
             process.StandardInput.Close();
 
-            return WaitAndInterpret(process);
+            return WaitAndInterpret(process, stdoutTask, stderrTask);
         }
         catch (System.ComponentModel.Win32Exception ex)
         {
@@ -131,7 +141,10 @@ internal static class AppleScriptActivator
         }
     }
 
-    private static Boolean WaitAndInterpret(Process process)
+    private static Boolean WaitAndInterpret(
+        Process process,
+        System.Threading.Tasks.Task<String> stdoutTask,
+        System.Threading.Tasks.Task<String> stderrTask)
     {
         var finished = process.WaitForExit((Int32)ExecutionTimeout.TotalMilliseconds);
         if (!finished)
@@ -149,17 +162,48 @@ internal static class AppleScriptActivator
             return false;
         }
 
+        // The timeout overload of WaitForExit may return before the
+        // child's async stdout/stderr pipes are fully flushed to the
+        // StreamReader. Calling the parameterless WaitForExit after
+        // the successful timed wait is the documented way to
+        // synchronise with that flush on .NET 8.
+        try
+        {
+            process.WaitForExit();
+        }
+        catch (InvalidOperationException)
+        {
+            // Already disposed / already exited — safe to continue.
+        }
+
+        var stdout = SafeResult(stdoutTask).Trim();
+        var stderr = SafeResult(stderrTask).Trim();
+
         if (process.ExitCode == 0)
         {
-            var stdout = process.StandardOutput.ReadToEnd().Trim();
             PluginLog.Info($"macro-claude: osascript AXRaise exit 0 → {stdout}");
             return stdout.StartsWith("matched=", StringComparison.Ordinal)
                 && !stdout.StartsWith("matched=0", StringComparison.Ordinal);
         }
 
-        var stderr = process.StandardError.ReadToEnd();
         PluginLog.Warning(
-            $"macro-claude: osascript AXRaise exited {process.ExitCode.ToString(System.Globalization.CultureInfo.InvariantCulture)}: {stderr.Trim()}");
+            $"macro-claude: osascript AXRaise exited {process.ExitCode.ToString(System.Globalization.CultureInfo.InvariantCulture)}: {stderr}");
         return false;
+    }
+
+    private static String SafeResult(System.Threading.Tasks.Task<String> task)
+    {
+        try
+        {
+            return task.GetAwaiter().GetResult() ?? String.Empty;
+        }
+        catch (System.IO.IOException)
+        {
+            return String.Empty;
+        }
+        catch (OperationCanceledException)
+        {
+            return String.Empty;
+        }
     }
 }

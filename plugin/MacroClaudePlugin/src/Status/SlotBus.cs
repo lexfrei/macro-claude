@@ -54,7 +54,19 @@ internal static class SlotBus
 
     public static void Publish(Guid ownerToken, Int32 slot, SessionSnapshot? snapshot)
     {
-        if (ownerToken != _currentOwner)
+        // Read the current owner inside the lock. Guid is a 128-bit
+        // struct and the .NET memory model does not guarantee atomic
+        // reads of values wider than a pointer, so an unlocked read
+        // can observe a torn value during a concurrent
+        // AcquireOwnership call. Taking the lock here costs a single
+        // uncontended mutex acquire per publish, which is cheap next
+        // to the FSEvents/CPU work the caller has already done.
+        Guid owner;
+        lock (OwnerLock)
+        {
+            owner = _currentOwner;
+        }
+        if (ownerToken != owner)
         {
             // Zombie publisher from a previous Plugin.Load — silently
             // drop. Not logged per-call because it would be a flood.

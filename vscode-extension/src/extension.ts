@@ -211,10 +211,10 @@ async function focusTerminalByPid(targetPid: number): Promise<FocusResponse> {
 
   // Walk upward from targetPid once and reuse the ancestor set for
   // both the integrated-terminal check and the extension-host check.
+  // The set always contains at least targetPid itself — ancestorsOf
+  // seeds the chain before calling ps — so there is no empty-set
+  // early exit to take here.
   const ancestors = await ancestorsOf(targetPid);
-  if (ancestors.size === 0) {
-    return { focused: false };
-  }
 
   // Terminal path: targetPid is a descendant of a bash/zsh running
   // inside one of this window's integrated terminals. The shell PID
@@ -243,15 +243,28 @@ async function focusTerminalByPid(targetPid: number): Promise<FocusResponse> {
 }
 
 /**
- * exactOptionalPropertyTypes forbids undefined-valued optional props,
- * so we construct the response incrementally and only attach keys
- * when we actually have values.
+ * Build a success response for the plugin, including whatever window
+ * identity we can extract. exactOptionalPropertyTypes forbids
+ * undefined-valued optional props, so we construct the response
+ * incrementally and only attach keys when we actually have values.
+ *
+ * workspaceRoot selection priority:
+ *   1. `vscode.workspace.workspaceFile` when it exists and is a
+ *      `file://` URI — this is the path to a .code-workspace file.
+ *      For multi-root workspaces that is the only identity `open
+ *      vscode://file/<path>` routes to the existing window instead
+ *      of creating a new single-folder window for the first root.
+ *   2. `workspaceFolders[0].uri.fsPath` — falls back to the first
+ *      (and often only) folder for regular single-folder windows.
+ *
+ * Untitled / in-memory workspaces have a `workspaceFile` with scheme
+ * `untitled:` — we ignore those because LaunchServices cannot open
+ * them via URL.
  */
 function buildSuccess(terminalName: string): FocusResponse {
   const base: FocusResponse = { focused: true, terminalName };
   const workspaceName = vscode.workspace.name;
-  const folders = vscode.workspace.workspaceFolders;
-  const workspaceRoot = folders?.[0]?.uri.fsPath;
+  const workspaceRoot = pickWorkspaceRoot();
   if (workspaceName !== undefined && workspaceRoot !== undefined) {
     return { ...base, workspaceName, workspaceRoot };
   }
@@ -262,6 +275,15 @@ function buildSuccess(terminalName: string): FocusResponse {
     return { ...base, workspaceRoot };
   }
   return base;
+}
+
+function pickWorkspaceRoot(): string | undefined {
+  const workspaceFile = vscode.workspace.workspaceFile;
+  if (workspaceFile?.scheme === 'file') {
+    return workspaceFile.fsPath;
+  }
+  const folders = vscode.workspace.workspaceFolders;
+  return folders?.[0]?.uri.fsPath;
 }
 
 /**
