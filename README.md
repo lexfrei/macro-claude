@@ -26,10 +26,11 @@ every running session a coloured key on the MX Creative Console:
 Each key also shows the short project name and the elapsed turn time
 (`MM:SS` or `HH:MM:SS`, so an 8-hour turn is obvious at a glance).
 
-Pressing a key focuses the terminal that owns that session. For VS Code
-that's the exact integrated terminal via a companion extension; for
-iTerm2 it raises the application so you can pick the tab manually (full
-session-level focus via the iTerm2 protobuf API is on the roadmap).
+Pressing a key focuses the exact terminal that owns that session. For
+VS Code that's the exact integrated terminal via a companion extension;
+for iTerm2 it's the exact session (tab + split) via the iTerm2 Python
+API protobuf client, with automatic fallback to app-level activate if
+the iTerm2 API is off or the socket is missing.
 
 ## How it works
 
@@ -182,9 +183,13 @@ token. `POST /focus {pid: number}` finds the terminal via
   with Logi Plugin Service running and an MX Creative Console connected
 - Claude Code CLI 2.x with hooks configured
 - `jq` — used by the bash hook script. `brew install jq` if not present.
-- Optional: VS Code for integrated-terminal focus
-- Optional: iTerm2 with *Enable Python API* turned on for future
-  session-level focus
+- Optional: VS Code with the companion extension for integrated-terminal
+  focus
+- Optional: iTerm2 with *Settings → General → Magic → Enable Python API*
+  turned on for session-level focus (tab + split). Without the API on,
+  the plugin falls back to app-level activate. On first focus request,
+  iTerm2 will prompt once to allow macro-claude access to its API —
+  accept it; the cookie is cached in the plugin process until reload.
 
 ## Build requirements
 
@@ -340,6 +345,23 @@ extension is installed and that VS Code is open. Check
 missing, the extension did not activate. Open *Output → Extension Host*
 in VS Code.
 
+**Pressing a key raises iTerm2 but lands on the wrong tab.** This
+means the plugin fell through to app-level activate because
+session-level focus failed. Check:
+
+1. iTerm2 *Settings → General → Magic → Enable Python API* is on.
+2. `~/Library/Application Support/iTerm2/private/socket` exists
+   (created by iTerm2 when the API is enabled and iTerm2 is running).
+3. On first focus request iTerm2 shows a permission prompt asking to
+   allow `macro-claude` access — accept it. The cookie is cached in
+   the plugin process for its lifetime; if LPS reloads the plugin, a
+   new prompt appears on next press.
+4. The target Claude Code process is actually the **foreground** job
+   of an iTerm2 session. `ITerm2Client` matches by the iTerm2
+   `jobPid` variable, which is the session's current foreground PID.
+   If Claude Code is backgrounded via `&` or inside a tmux session,
+   the match will fail.
+
 **Everything is off by one second.** All timestamps in
 `~/.claude/session-status/` are Unix seconds, not milliseconds. The
 `turn_started_s` field is always the start of the **current** turn, not
@@ -362,8 +384,9 @@ localhost-only HTTP bridge to the VS Code companion extension.
 
 Working end-to-end: plugin loads into Logi Plugin Service, StatusReader
 watches all three source-of-truth directories, hooks are installed,
-FocusDispatcher handles VS Code focus end-to-end. iTerm2 session-level
-focus is still app-level only — full protobuf client is tracked for v2.
+FocusDispatcher handles VS Code and iTerm2 session-level focus via the
+iTerm2 Python API protobuf client with graceful fallback to app-level
+activate.
 
 ## License
 
