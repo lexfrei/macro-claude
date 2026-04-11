@@ -1,4 +1,11 @@
 <Project>
+    <!--
+        MSBuild only imports the nearest Directory.Build.props, so chain
+        manually to the repository root one where the strict analyzer
+        policy lives. If the root file moves, update the path below.
+    -->
+    <Import Project="..\..\..\Directory.Build.props" />
+
     <PropertyGroup>
         <LangVersion>latest</LangVersion>
         <BaseIntermediateOutputPath>$(SolutionDir)obj\</BaseIntermediateOutputPath>

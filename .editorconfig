@@ -136,13 +136,64 @@ dotnet_analyzer_diagnostic.category-Security.severity = warning
 dotnet_analyzer_diagnostic.category-Style.severity = warning
 dotnet_analyzer_diagnostic.category-Usage.severity = warning
 
-# Targeted suppressions — file-scoped namespace is the only "top-level" style we use
+# Errors we enforce — file-scoped namespace is the only "top-level" style we use
 dotnet_diagnostic.IDE0161.severity = error
 
-# Disable StyleCop rules that conflict with modern C# / .editorconfig choices
-dotnet_diagnostic.SA1200.severity = none  # using directives placement (we use outside_namespace — rule conflicts)
-dotnet_diagnostic.SA1633.severity = none  # file header
+# StyleCop rules that conflict with modern C# / .editorconfig choices
+dotnet_diagnostic.SA1200.severity = none  # using directives placement — conflict with using_directive_placement=outside_namespace
+dotnet_diagnostic.SA1633.severity = none  # file header banner
 dotnet_diagnostic.SA1101.severity = none  # prefix local calls with this.
-dotnet_diagnostic.SA1309.severity = none  # field names must not begin with underscore (we allow _camelCase)
-dotnet_diagnostic.SA1413.severity = none  # trailing comma in multi-line initializers (we don't require)
-dotnet_diagnostic.SA1652.severity = none  # xml documentation
+dotnet_diagnostic.SA1309.severity = none  # field names must not begin with underscore
+dotnet_diagnostic.SA1413.severity = none  # trailing comma in multi-line initializers
+dotnet_diagnostic.SA1652.severity = none  # xml documentation required
+
+# Aesthetic StyleCop rules — noise, not worth fighting
+dotnet_diagnostic.SA1025.severity = none  # multiple whitespace (aligned => is nice)
+dotnet_diagnostic.SA1516.severity = none  # blank line between elements
+dotnet_diagnostic.SA1518.severity = none  # end-of-file newline quirks
+dotnet_diagnostic.SA1600.severity = none  # elements must be documented
+dotnet_diagnostic.SA1601.severity = none  # partial elements must be documented
+dotnet_diagnostic.SA1602.severity = none  # enumeration items must be documented
+dotnet_diagnostic.SA1108.severity = none  # block statements should not contain embedded comments
+dotnet_diagnostic.SA1117.severity = none  # parameters must be on same line or separate lines
+dotnet_diagnostic.SA1121.severity = none  # use built-in type alias
+dotnet_diagnostic.SA1122.severity = none  # use String.Empty for empty strings
+dotnet_diagnostic.SA1201.severity = none  # elements should appear in correct order
+dotnet_diagnostic.SA1202.severity = none  # elements should be ordered by access
+dotnet_diagnostic.SA1214.severity = none  # readonly fields should appear before non-readonly
+dotnet_diagnostic.SA1512.severity = none  # single-line comments must not be followed by blank line
+dotnet_diagnostic.SA1513.severity = none  # closing brace must be followed by blank line
+dotnet_diagnostic.SA1629.severity = none  # documentation must end with a period
+
+# Style rules that prefer terseness over clarity — not worth enforcing
+dotnet_diagnostic.IDE0055.severity = none  # general formatting
+dotnet_diagnostic.IDE0130.severity = none  # namespace folder structure match
+dotnet_diagnostic.IDE0028.severity = none  # collection initialization style
+dotnet_diagnostic.IDE0032.severity = none  # use auto property
+dotnet_diagnostic.IDE0045.severity = none  # conditional expression for assignment
+dotnet_diagnostic.IDE0046.severity = none  # conditional expression for return
+dotnet_diagnostic.IDE0022.severity = none  # expression body for method
+dotnet_diagnostic.IDE0004.severity = none  # unnecessary cast
+dotnet_diagnostic.IDE0057.severity = none  # use range operator
+dotnet_diagnostic.IDE0058.severity = none  # remove unnecessary expression value
+dotnet_diagnostic.IDE0059.severity = none  # remove unnecessary value assignment
+
+# Code-quality rules that do not apply to a Loupedeck plugin context
+dotnet_diagnostic.CA1724.severity = none  # type name matches namespace (MacroClaudePlugin class in MacroClaudePlugin ns)
+dotnet_diagnostic.CA1003.severity = none  # use generic event handler (Action<> is idiomatic)
+dotnet_diagnostic.CA1512.severity = none  # ArgumentOutOfRangeException.ThrowIfNegativeOrZero (pre-.NET 8 style OK)
+dotnet_diagnostic.CA1031.severity = none  # do not catch general exception types (needed for resilience)
+dotnet_diagnostic.CA1303.severity = none  # do not pass literals as localized parameters
+dotnet_diagnostic.CA1305.severity = none  # specify IFormatProvider (handled globally via InvariantGlobalization)
+dotnet_diagnostic.CA1307.severity = none  # specify StringComparison for clarity
+dotnet_diagnostic.CA1308.severity = none  # normalize to uppercase
+dotnet_diagnostic.CA1819.severity = none  # properties should not return arrays
+dotnet_diagnostic.CA1822.severity = suggestion  # mark members as static (suggestion not error)
+dotnet_diagnostic.CA1848.severity = none  # use LoggerMessage delegates (overkill here)
+dotnet_diagnostic.CA2007.severity = none  # ConfigureAwait in library code (plugin, not lib)
+dotnet_diagnostic.CA2213.severity = none  # disposable field — Plugin base class uses Load/Unload, not Dispose
+
+# Roslynator rules that fight resilient empty catches on watcher callbacks
+dotnet_diagnostic.RCS1075.severity = none  # avoid empty catch (we deliberately swallow watcher I/O errors)
+dotnet_diagnostic.RCS1163.severity = none  # unused parameter (event handlers)
+dotnet_diagnostic.SYSLIB1054.severity = none  # prefer LibraryImport over DllImport (overkill for 6 P/Invoke methods)
