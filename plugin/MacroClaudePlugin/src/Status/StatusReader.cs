@@ -187,6 +187,7 @@ public sealed class StatusReader : IDisposable
         {
             this.ReconcileSessionStatusDirectory();
             this.ResolveMissingPids();
+            this.ReapDeadPidSessions();
             this.RefreshCpuUsage();
             this.RefreshJsonlSignals();
             this.EmitAllSnapshots();
@@ -194,6 +195,97 @@ public sealed class StatusReader : IDisposable
         catch (Exception ex)
         {
             Debug.WriteLine($"StatusReader poll error: {ex.Message}");
+        }
+    }
+
+    // Some Claude Code frontends — notably the Anthropic VS Code
+    // extension when a user reloads the window — leave stale
+    // ~/.claude/session-status/<id>.json and
+    // ~/.claude/sessions/<pid>.json files behind, because they do
+    // not always fire a SessionEnd hook before dying. Over time the
+    // user sees the same project on the macropad several times,
+    // one button per historical session_id.
+    //
+    // For every accumulator with a known pid, check that the pid is
+    // still alive. If not, we know the session is gone and can reap
+    // it immediately — and, for hygiene, also scrub the stale
+    // session-status file so the next reconcile sweep does not
+    // resurrect the accumulator a tick later.
+    private void ReapDeadPidSessions()
+    {
+        if (this._bySessionId.IsEmpty)
+        {
+            return;
+        }
+
+        foreach (var sessionId in this._bySessionId.Keys.ToArray())
+        {
+            if (!this._bySessionId.TryGetValue(sessionId, out var acc))
+            {
+                continue;
+            }
+            if (acc.Pid <= 0)
+            {
+                continue;
+            }
+            if (IsProcessAlive(acc.Pid))
+            {
+                continue;
+            }
+
+            TryDeleteStaleStatusFile(this._sessionStatusDir, sessionId);
+
+            if (this._bySessionId.TryRemove(sessionId, out var removed))
+            {
+                if (removed.Pid > 0)
+                {
+                    this._sessionIdByPid.TryRemove(removed.Pid, out _);
+                }
+                this.SessionRemoved?.Invoke(this, sessionId);
+            }
+        }
+    }
+
+    private static Boolean IsProcessAlive(Int32 pid)
+    {
+        if (pid <= 0)
+        {
+            return false;
+        }
+        try
+        {
+            using var p = Process.GetProcessById(pid);
+            return !p.HasExited;
+        }
+        catch (ArgumentException)
+        {
+            // No such process.
+            return false;
+        }
+        catch (InvalidOperationException)
+        {
+            // Already exited.
+            return false;
+        }
+    }
+
+    private static void TryDeleteStaleStatusFile(String sessionStatusDir, String sessionId)
+    {
+        try
+        {
+            var path = Path.Combine(sessionStatusDir, sessionId + ".json");
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+        catch (IOException)
+        {
+            // Someone else holds the file — try again next tick.
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Permissions — bail, harmless.
         }
     }
 

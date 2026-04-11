@@ -81,6 +81,12 @@ public abstract class SlotCommandBase : PluginDynamicCommand
         return snapshot is null ? DrawEmpty(imageSize) : DrawSlot(snapshot, imageSize);
     }
 
+    // The text label that Logi Options+ renders UNDER the button
+    // bitmap. We carry only the repo name and elapsed time here —
+    // no state mark — because the state is already conveyed by the
+    // glyph on the bitmap itself. Duplicating the state symbol in
+    // both places produced a visually noisy "▶ macro-claude" row
+    // right below a big ▶ icon.
     protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize)
     {
         var snapshot = SlotBus.TryGetSnapshot(this.SlotIndex);
@@ -88,19 +94,7 @@ public abstract class SlotCommandBase : PluginDynamicCommand
         {
             return "—";
         }
-
-        var mark = snapshot.State switch
-        {
-            SessionState.Idle => "✓",
-            SessionState.Working => "▶",
-            SessionState.Thinking => "~",
-            SessionState.Stuck => "!",
-            SessionState.Error => "✗",
-            SessionState.Gone => "·",
-            _ => "?",
-        };
-
-        return $"{mark} {snapshot.ShortName}{Environment.NewLine}{FormatElapsed(snapshot.Elapsed)}";
+        return $"{snapshot.ShortName}{Environment.NewLine}{FormatElapsed(snapshot.Elapsed)}";
     }
 
     private void OnSlotChanged(Int32 slot, SessionSnapshot? snapshot)
@@ -114,24 +108,24 @@ public abstract class SlotCommandBase : PluginDynamicCommand
         this.ActionImageChanged();
     }
 
-    // Button layout (works at both 60x60 and 90x90 MXCC sizes):
+    // Button bitmap layout (works at both 60x60 and 90x90 MXCC sizes):
     //
     //   ┌──────────────────┐
-    //   │ ████████████████ │  4px accent bar — state colour
+    //   │ ████████████████ │  thin accent bar — state colour
     //   │                  │
-    //   │        ●         │  large state glyph — state colour
     //   │                  │
-    //   │   macro-claude   │  project name — white
-    //   │      00:42       │  elapsed time — muted grey
+    //   │        ●         │  large centred state glyph — state colour
+    //   │                  │
+    //   │                  │
     //   └──────────────────┘
     //
-    // Dark background, colour is used as an accent rather than a
-    // wash, to avoid the "traffic light" look the user complained
-    // about. The large glyph carries the state recognition at a
-    // glance; accent bar confirms it with colour without drowning
-    // the text.
+    // Dark background, one glyph, one colour strip, nothing else.
+    // Text (repo name + elapsed time) is delivered via
+    // GetCommandDisplayName, which Logi Options+ renders as a label
+    // underneath the button. Putting the text on the bitmap AND in
+    // the label duplicated everything and made the icon fight the
+    // label for attention.
     private static readonly BitmapColor Background = new(24, 24, 26);
-    private static readonly BitmapColor NameColor = new(235, 235, 235);
     private static readonly BitmapColor MutedColor = new(140, 140, 150);
 
     private static BitmapImage DrawEmpty(PluginImageSize imageSize)
@@ -165,29 +159,19 @@ public abstract class SlotCommandBase : PluginDynamicCommand
         var h = builder.Height;
         var accent = AccentFor(snapshot.State);
 
-        // Precomputed layout constants derived from button height.
-        // Named intermediates sidestep the SA1407 / IDE0047 precedence
-        // flip-flop between the two analyzer packs.
-        var quarter = h / 4;
-        var half = h / 2;
+        // Precomputed layout constants — named intermediates sidestep
+        // the SA1407 / IDE0047 precedence flip-flop between the two
+        // analyzer packs when used inside expressions below.
         var twentieth = h / 20;
         var barH = Math.Max(3, twentieth);
-        var glyphSize = (Int32)((Double)h * 0.38);
-        var glyphY = barH + 2;
-        var glyphH = half - barH;
-        var nameSize = Math.Max(10, h / 7);
-        var nameY = half + 2;
-        var nameH = quarter;
-        var timeSize = Math.Max(9, h / 8);
-        var timeY = h - quarter;
-        var timeH = quarter - 2;
-        var textX = 2;
-        var textW = w - 4;
+        var glyphSize = (Int32)((Double)h * 0.66);
+        var glyphY = barH;
+        var glyphH = h - barH;
 
-        // Top accent bar — state colour strip.
+        // Thin accent bar at the top — state colour.
         builder.FillRectangle(0, 0, w, barH, accent);
 
-        // Large state glyph, top third.
+        // One big centred glyph filling most of the remaining area.
         builder.DrawText(
             text: GlyphFor(snapshot.State),
             x: 0,
@@ -200,44 +184,7 @@ public abstract class SlotCommandBase : PluginDynamicCommand
             spaceHeight: 0,
             fontName: null);
 
-        // Project name, middle strip.
-        builder.DrawText(
-            text: TruncateForButton(snapshot.ShortName, w),
-            x: textX,
-            y: nameY,
-            width: textW,
-            height: nameH,
-            color: NameColor,
-            fontSize: nameSize,
-            lineHeight: 0,
-            spaceHeight: 0,
-            fontName: null);
-
-        // Elapsed time, bottom strip.
-        builder.DrawText(
-            text: FormatElapsed(snapshot.Elapsed),
-            x: textX,
-            y: timeY,
-            width: textW,
-            height: timeH,
-            color: MutedColor,
-            fontSize: timeSize,
-            lineHeight: 0,
-            spaceHeight: 0,
-            fontName: null);
-
         return builder.ToImage();
-    }
-
-    // Trim the name to something that will not clip the button. The
-    // SDK will squash text to fit, but very long names become a grey
-    // smudge. Cap at 14 characters with an ellipsis; button widths
-    // in the 60-90px range render up to ~10 characters comfortably
-    // at the name font size we picked.
-    private static String TruncateForButton(String name, Int32 width)
-    {
-        _ = width;
-        return name.Length <= 14 ? name : name[..13] + "…";
     }
 
     private static BitmapColor AccentFor(SessionState state) => state switch
