@@ -241,14 +241,51 @@ code --install-extension macro-claude-bridge-0.0.1.vsix
 
 ### 4. Configure the macropad
 
-Open *Logi Options+*, find the **Claude** group, and drag **Claude
-Session** onto the keys you want. Each slot (0..8) will render its
-assigned session when one appears; empty slots show a placeholder.
+Open *Logi Options+* and find the **Claude** category. There are three
+sub-groups — **Claude / Page 1**, **Page 2**, **Page 3** — each with 9
+slot commands (`Slot 1..9`). Drag whichever slots you want onto your
+MX Creative Console keys. Sessions are assigned to slots on a first
+come, first served basis as they appear, so a reasonable layout is to
+place slots on one profile page and start macro-claude sessions as you
+need them.
+
+## Configuration (optional)
+
+All state-resolver thresholds are tunable per machine by dropping a
+`~/.claude/macro-claude.json` file. Every field is optional; a missing
+or non-positive value falls back to the constant default used by
+`StateResolver`.
+
+```json
+{
+  "freshHeartbeatSeconds": 3,
+  "staleHeartbeatSeconds": 30,
+  "cpuActiveThreshold": 1.0,
+  "cpuIdleThreshold": 0.5
+}
+```
+
+| Field | Default | Meaning |
+| ----- | ------- | ------- |
+| `freshHeartbeatSeconds` | 3 | Heartbeat is "fresh" if age < N s; working |
+| `staleHeartbeatSeconds` | 30 | Heartbeat is "stale" if age > N s; triggers stuck/thinking discrimination |
+| `cpuActiveThreshold` | 1.0 | CPU ≥ N % with stale heartbeat → thinking |
+| `cpuIdleThreshold` | 0.5 | CPU ≤ N % with stale heartbeat → stuck |
+
+The config file is read once in `StatusReader`'s constructor. Changes
+at runtime require a plugin reload (touch the `.link` file or restart
+Logi Plugin Service).
+
+Raise `freshHeartbeatSeconds` if your Claude Code sessions routinely
+emit output in chunks wider than 3 seconds — otherwise they will
+bounce between `working` and `thinking`. Lower `cpuActiveThreshold`
+on machines with noisy background CPU, or raise it if the idle
+baseline is high.
 
 ## Tests and linting
 
 ```bash
-make test              # dotnet test on pure logic (41 tests)
+make test              # dotnet test on pure logic (50 tests)
 make lint-shell        # shellcheck hooks
 make lint-vscode       # eslint + tsc --noEmit on the vscode extension
 ```

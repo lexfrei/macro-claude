@@ -169,9 +169,23 @@ public const Double CpuActiveThreshold = 1.0;
 public const Double CpuIdleThreshold = 0.5;
 ```
 
-If you change these, update the unit tests in
-`plugin/MacroClaudePlugin.Tests/StateResolverTests.cs` explicitly — do not
-rely on the tests accidentally still passing.
+These are the **baseline** defaults. A per-machine override file at
+`~/.claude/macro-claude.json` (parsed by `StateResolverConfig`) can
+set any subset of the four thresholds. `StatusReader` loads the file
+once in its constructor and passes the result through to every
+`StateResolver.Determine` call via a trailing `StateResolverConfig?`
+parameter. Callers who pass `config: null` still get the constant
+defaults unchanged, which is why every pre-config test case continues
+to pass without modification.
+
+If you change any of the defaults:
+1. Update the test cases in
+   `plugin/MacroClaudePlugin.Tests/StateResolverTests.cs` that pin
+   the specific threshold values.
+2. Update `plugin/MacroClaudePlugin.Tests/StateResolverConfigTests.cs`
+   if you change the field names or types.
+3. Update the Configuration table in `README.md`.
+4. Mention the change in `CHANGELOG.md`.
 
 ## Hook wire format
 
