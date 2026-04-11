@@ -6,6 +6,15 @@
   "private": true,
   "publisher": "lexfrei",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lexfrei/macro-claude.git",
+    "directory": "vscode-extension"
+  },
+  "homepage": "https://github.com/lexfrei/macro-claude#readme",
+  "bugs": {
+    "url": "https://github.com/lexfrei/macro-claude/issues"
+  },
   "engines": {
     "vscode": "^1.95.0",
     "node": ">=20"
