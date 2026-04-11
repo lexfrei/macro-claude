@@ -44,10 +44,61 @@ public static class FocusDispatcher
             return FocusResult.InvalidPid;
         }
 
-        // 1. Try VS Code companion extension bridge.
-        var vscodeHandled = await TryFocusVSCodeTerminalAsync(pid, cancellationToken).ConfigureAwait(false);
-        if (vscodeHandled)
+        // 1. Ask the VS Code companion extension bridge whether this
+        //    PID belongs to one of its windows. We do this *first* to
+        //    distinguish VS Code sessions from iTerm2 sessions so the
+        //    caskad does not accidentally steal focus in the wrong
+        //    terminal app. The bridge also runs `terminal.show()` on
+        //    the matching integrated terminal so the right panel tab
+        //    is active inside its window, and returns the workspace
+        //    root path of that window so we can ask LaunchServices to
+        //    raise it.
+        var vscodeAnswer = await TryFocusVSCodeTerminalAsync(pid, cancellationToken).ConfigureAwait(false);
+        if (vscodeAnswer is not null)
         {
+            var (workspaceName, workspaceRoot) = vscodeAnswer.Value;
+            PluginLog.Info(
+                $"macro-claude: bridge confirmed VS Code ownership of pid {pid.ToString(System.Globalization.CultureInfo.InvariantCulture)} (workspaceRoot='{workspaceRoot}' name='{workspaceName}')");
+
+            // Path A (preferred): open the workspace root reported by
+            // the bridge via `vscode://file/<root>`. macOS
+            // LaunchServices routes the URL to the VS Code window
+            // already holding that folder — including windows on
+            // different fullscreen Spaces, which AppleScript AXRaise
+            // cannot reach because Accessibility API is Space-local.
+            // We prefer the bridge-reported root over the session
+            // `cwd` because claude may have been launched from a
+            // subdirectory of the workspace; using cwd there would
+            // pop open a brand-new window rooted at the subdirectory
+            // instead of activating the existing window.
+            if (!String.IsNullOrEmpty(workspaceRoot)
+                && workspaceRoot.StartsWith('/')
+                && VSCodeUrlActivator.OpenWorkspace(workspaceRoot))
+            {
+                return FocusResult.VSCodeTerminal;
+            }
+
+            // Path A': cwd fallback — if the bridge did not report a
+            // workspace root (rare; happens for windows opened with
+            // no folder), fall back to the session snapshot's cwd.
+            if (!String.IsNullOrEmpty(cwd)
+                && cwd.StartsWith('/')
+                && VSCodeUrlActivator.OpenWorkspace(cwd))
+            {
+                return FocusResult.VSCodeTerminal;
+            }
+
+            // Path B: single-Space AXRaise via AppleScript. Works when
+            // all VS Code windows live in the same Space, so it is a
+            // sensible fallback when neither URL path worked.
+            if (!String.IsNullOrEmpty(workspaceName)
+                && AppleScriptActivator.RaiseCodeWindowByWorkspace(workspaceName))
+            {
+                return FocusResult.VSCodeTerminal;
+            }
+
+            // Path C: bundle-level activate. Lands the user in VS
+            // Code somewhere — better than nothing.
             NativeActivator.ActivateByBundleId(VSCodeBundleId);
             return FocusResult.VSCodeTerminal;
         }
@@ -74,12 +125,28 @@ public static class FocusDispatcher
             return FocusResult.ITerm2AppOnly;
         }
 
-        // 4. Unknown — surface so caller can log.
+        // 4. VS Code app-level activate — last-chance fallback used
+        //    when the companion extension is not installed yet, or the
+        //    bridge lock file for this window is stale. Raises the VS
+        //    Code window to the foreground without knowing which
+        //    integrated terminal owns the PID. Better than NotFound —
+        //    the user at least lands in the right app and can pick the
+        //    terminal manually.
+        if (NativeActivator.ActivateByBundleId(VSCodeBundleId))
+        {
+            return FocusResult.VSCodeAppOnly;
+        }
+
+        // 5. Unknown — surface so caller can log.
         _ = cwd;
         return FocusResult.NotFound;
     }
 
-    private static async Task<Boolean> TryFocusVSCodeTerminalAsync(
+    // Returns (workspaceName, workspaceRoot) reported by the bridge
+    // on success, or null if no bridge handled the PID. Empty strings
+    // inside the tuple are legitimate — "VS Code window found, but
+    // has no folder open" — so we distinguish via tuple nullability.
+    private static async Task<(String Name, String Root)?> TryFocusVSCodeTerminalAsync(
         Int32 pid,
         CancellationToken cancellationToken)
     {
@@ -90,7 +157,7 @@ public static class FocusDispatcher
 
         if (!Directory.Exists(bridgeDir))
         {
-            return false;
+            return null;
         }
 
         var locks = EnumerateLockFiles(bridgeDir);
@@ -118,10 +185,15 @@ public static class FocusDispatcher
                     HttpCompletionOption.ResponseContentRead,
                     cancellationToken).ConfigureAwait(false);
 
-                if (response.IsSuccessStatusCode)
+                if (!response.IsSuccessStatusCode)
                 {
-                    return true;
+                    continue;
                 }
+
+                var body = await response.Content
+                    .ReadAsStringAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                return ParseBridgeResponse(body);
             }
             catch (HttpRequestException)
             {
@@ -133,7 +205,32 @@ public static class FocusDispatcher
             }
         }
 
-        return false;
+        return null;
+    }
+
+    private static (String Name, String Root) ParseBridgeResponse(String body)
+    {
+        if (String.IsNullOrEmpty(body))
+        {
+            return (String.Empty, String.Empty);
+        }
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            var name = doc.RootElement.TryGetProperty("workspaceName", out var ws)
+                && ws.ValueKind == JsonValueKind.String
+                ? ws.GetString() ?? String.Empty
+                : String.Empty;
+            var root = doc.RootElement.TryGetProperty("workspaceRoot", out var wr)
+                && wr.ValueKind == JsonValueKind.String
+                ? wr.GetString() ?? String.Empty
+                : String.Empty;
+            return (name, root);
+        }
+        catch (JsonException)
+        {
+            return (String.Empty, String.Empty);
+        }
     }
 
     private static IEnumerable<String> EnumerateLockFiles(String bridgeDir)
@@ -184,4 +281,5 @@ public enum FocusResult
     VSCodeTerminal = 2,
     ITerm2Session = 3,
     ITerm2AppOnly = 4,
+    VSCodeAppOnly = 5,
 }
