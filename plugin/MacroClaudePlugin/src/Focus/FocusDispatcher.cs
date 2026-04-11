@@ -52,16 +52,29 @@ public static class FocusDispatcher
             return FocusResult.VSCodeTerminal;
         }
 
-        // 2. iTerm2 session focus — not yet implemented at the session
-        //    level. Fall back to activating the iTerm2 app so the user
-        //    at least lands in the right application and can pick the
-        //    tab manually.
+        // 2. Try iTerm2 session-level focus via the protobuf API. This
+        //    is the ideal path — it activates the exact session (tab +
+        //    split) that owns the Claude Code process, not just the
+        //    iTerm2 app. Requires the user to have enabled the iTerm2
+        //    Python API in Settings > General > Magic; on first use it
+        //    triggers an AppleScript cookie prompt which the user must
+        //    approve once per plugin process lifetime.
+        if (await ITerm2Client.FocusSessionByPidAsync(pid, cancellationToken).ConfigureAwait(false))
+        {
+            NativeActivator.ActivateByBundleId(ITerm2BundleId);
+            return FocusResult.ITerm2Session;
+        }
+
+        // 3. iTerm2 app-level activate — happens when the API is off,
+        //    the socket is missing, the cookie was denied, or no
+        //    session matches the PID. The user lands in iTerm2 and
+        //    picks the tab manually.
         if (NativeActivator.ActivateByBundleId(ITerm2BundleId))
         {
             return FocusResult.ITerm2AppOnly;
         }
 
-        // 3. Unknown — surface so caller can log.
+        // 4. Unknown — surface so caller can log.
         _ = cwd;
         return FocusResult.NotFound;
     }
