@@ -29,6 +29,34 @@
     </Reference>
   </ItemGroup>
 
+  <!--
+    Google.Protobuf + Grpc.Tools give us protoc codegen at build time
+    without any gRPC runtime dependency. The plugin only needs the
+    protobuf wire format to talk to iTerm2's Unix-socket WebSocket API.
+    Grpc.Tools is PrivateAssets=all so it stays out of the runtime
+    dependency graph; Google.Protobuf must be shipped alongside the
+    plugin DLL and is picked up via CopyLocalLockFileAssemblies=true.
+  -->
+  <ItemGroup>
+    <PackageReference Include="Google.Protobuf" Version="3.28.3" />
+    <PackageReference Include="Grpc.Tools" Version="2.67.0">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <!--
+    Vendored iTerm2 api.proto (sourced from gnachman/iTerm2 master,
+    commit pinned via plugin/MacroClaudePlugin/src/Proto/api.proto).
+    Grpc.Tools runs protoc on every build and places the generated
+    C# into obj/Debug/... — it is never committed. Generated code
+    lives in the `Iterm2` namespace (derived from `package iterm2;`
+    in the .proto).
+  -->
+  <ItemGroup>
+    <Protobuf Include="Proto/api.proto" ProtoRoot="Proto" GrpcServices="None" />
+  </ItemGroup>
+
   <Target Name="CopyPackage" AfterTargets="PostBuildEvent">
     <Message Text="📦 Copying package files..." Importance="High" />
     <ItemGroup>
