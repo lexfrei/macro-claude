@@ -1,20 +1,41 @@
 using System;
+using System.Collections.Concurrent;
 
 namespace Loupedeck.MacroClaudePlugin.Status;
 
-// Process-wide event bus used to push slot updates from MacroClaudePlugin
-// to SessionStatusCommand without resolving the command instance via the
-// Loupedeck API (which does not expose a clean lookup for dynamic
-// command instances from Plugin.Load).
+// Process-wide store + event bus for slot snapshots. Anything in the
+// plugin can query the latest snapshot for a slot index, and anything
+// in the plugin can subscribe to changes.
 //
-// SessionStatusCommand subscribes in its constructor; MacroClaudePlugin
-// publishes whenever StatusReader emits an update. Unsubscription happens
-// when the command instance is disposed by the runtime — for a singleton
-// plugin that is equivalent to process shutdown, so no leak window.
+// Why both a store and an event: PluginDynamicCommand instances are
+// created by the Loupedeck Plugin Service at unpredictable times
+// (command discovery, button rendering, parameter enumeration). A
+// fresh instance hands LPS an empty `_snapshotsBySlot` dictionary if
+// we keep state per instance, so the user sees dashes on every key
+// until the next StatusReader.Emit — which never happens if there is
+// no file event. Storing snapshots on SlotBus (static, process-wide)
+// means every SessionStatusCommand instance reads from the same place,
+// and the event is only needed to trigger ActionImageChanged on the
+// live instance.
 internal static class SlotBus
 {
+    private static readonly ConcurrentDictionary<Int32, SessionSnapshot> Snapshots = new();
+
     public static event Action<Int32, SessionSnapshot?>? SlotChanged;
 
     public static void Publish(Int32 slot, SessionSnapshot? snapshot)
-        => SlotChanged?.Invoke(slot, snapshot);
+    {
+        if (snapshot is null)
+        {
+            Snapshots.TryRemove(slot, out _);
+        }
+        else
+        {
+            Snapshots[slot] = snapshot;
+        }
+        SlotChanged?.Invoke(slot, snapshot);
+    }
+
+    public static SessionSnapshot? TryGetSnapshot(Int32 slot)
+        => Snapshots.TryGetValue(slot, out var snap) ? snap : null;
 }

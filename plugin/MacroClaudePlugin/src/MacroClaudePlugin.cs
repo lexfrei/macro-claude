@@ -66,8 +66,11 @@ public class MacroClaudePlugin : Plugin
         {
             // All slots occupied — ignore. A future version will scroll
             // to additional profile pages.
+            PluginLog.Warning($"macro-claude: no free slot for {snapshot.SessionId}");
             return;
         }
+        PluginLog.Verbose(
+            $"macro-claude: session {snapshot.SessionId} → slot {slot} state={snapshot.State} name={snapshot.ShortName}");
         SlotBus.Publish(slot, snapshot);
     }
 
@@ -83,6 +86,7 @@ public class MacroClaudePlugin : Plugin
         {
             return;
         }
+        PluginLog.Verbose($"macro-claude: session {sessionId} removed from slot {slot}");
         SlotBus.Publish(slot, null);
     }
 }

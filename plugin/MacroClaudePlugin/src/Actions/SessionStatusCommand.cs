@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Concurrent;
 using System.Threading;
 
 using Loupedeck.MacroClaudePlugin.Focus;
@@ -7,9 +6,18 @@ using Loupedeck.MacroClaudePlugin.Status;
 
 namespace Loupedeck.MacroClaudePlugin.Actions;
 
-// Parameterized dynamic command: one command, N action parameters
-// (slot0..slot8). Each parameter renders the state of whatever session
+// Parameterized dynamic command: one command, 27 action parameters
+// (slot0..slot26). Each parameter renders the state of whatever session
 // has been assigned to that slot by SlotAssigner.
+//
+// Snapshot state is NOT held on the instance — it lives in SlotBus
+// which is process-wide static. The reason: Logi Plugin Service can
+// instantiate SessionStatusCommand multiple times (command discovery,
+// parameter enumeration, button render), and per-instance state means
+// a freshly created instance has an empty dictionary and renders all
+// keys as dashes until the next StatusReader.Emit rolls through. By
+// reading from SlotBus.TryGetSnapshot every render, any instance sees
+// the true current state.
 public class SessionStatusCommand : PluginDynamicCommand
 {
     // 27 slots = three full MX Creative Console profile pages worth. A
@@ -18,8 +26,6 @@ public class SessionStatusCommand : PluginDynamicCommand
     // onto whichever pages they like in Logi Options+.
     private const Int32 MaxSlots = 27;
     private const String SlotPrefix = "slot";
-
-    private readonly ConcurrentDictionary<Int32, SessionSnapshot> _snapshotsBySlot = new();
 
     public SessionStatusCommand()
         : base(displayName: "Claude Session", description: "Show Claude Code session status", groupName: "Claude")
@@ -41,6 +47,7 @@ public class SessionStatusCommand : PluginDynamicCommand
         }
 
         SlotBus.SlotChanged += this.OnSlotChanged;
+        PluginLog.Info($"macro-claude: SessionStatusCommand created, {MaxSlots} slots registered");
     }
 
     private void OnSlotChanged(Int32 slot, SessionSnapshot? snapshot)
@@ -49,24 +56,23 @@ public class SessionStatusCommand : PluginDynamicCommand
         {
             return;
         }
-
-        if (snapshot is null)
-        {
-            this._snapshotsBySlot.TryRemove(slot, out _);
-        }
-        else
-        {
-            this._snapshotsBySlot[slot] = snapshot;
-        }
-
+        PluginLog.Verbose($"macro-claude: slot {slot} changed (snapshot={(snapshot is null ? "cleared" : snapshot.SessionId)})");
         this.ActionImageChanged(SlotToParameter(slot));
     }
 
     protected override void RunCommand(String actionParameter)
     {
         var slot = ParameterToSlot(actionParameter);
-        if (slot < 0 || !this._snapshotsBySlot.TryGetValue(slot, out var snapshot))
+        PluginLog.Info($"macro-claude: RunCommand param='{actionParameter}' → slot={slot}");
+
+        if (slot < 0)
         {
+            return;
+        }
+        var snapshot = SlotBus.TryGetSnapshot(slot);
+        if (snapshot is null)
+        {
+            PluginLog.Warning($"macro-claude: slot {slot} has no snapshot — nothing to focus");
             return;
         }
 
@@ -92,11 +98,12 @@ public class SessionStatusCommand : PluginDynamicCommand
     protected override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize)
     {
         var slot = ParameterToSlot(actionParameter);
-        if (slot < 0 || !this._snapshotsBySlot.TryGetValue(slot, out var snapshot))
+        if (slot < 0)
         {
             return DrawEmpty(imageSize);
         }
-        return DrawSlot(snapshot, imageSize);
+        var snapshot = SlotBus.TryGetSnapshot(slot);
+        return snapshot is null ? DrawEmpty(imageSize) : DrawSlot(snapshot, imageSize);
     }
 
     // Text fallback used in the command palette / tooltips where bitmaps
@@ -104,7 +111,12 @@ public class SessionStatusCommand : PluginDynamicCommand
     protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize)
     {
         var slot = ParameterToSlot(actionParameter);
-        if (slot < 0 || !this._snapshotsBySlot.TryGetValue(slot, out var snapshot))
+        if (slot < 0)
+        {
+            return "—";
+        }
+        var snapshot = SlotBus.TryGetSnapshot(slot);
+        if (snapshot is null)
         {
             return "—";
         }
