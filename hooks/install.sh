@@ -37,8 +37,9 @@ die() {
 
 ensure_prereqs() {
   [[ -f "${MONITOR_SCRIPT}" ]] || die "session-monitor.sh not found at ${MONITOR_SCRIPT}"
+  # macOS BSD chmod does not accept `--` as an end-of-options separator.
   if [[ ! -x "${MONITOR_SCRIPT}" ]]; then
-    chmod +x -- "${MONITOR_SCRIPT}"
+    chmod +x "${MONITOR_SCRIPT}"
     printf 'made %s executable\n' "${MONITOR_SCRIPT}"
   fi
   command -v jq >/dev/null 2>&1 || die "jq is required — brew install jq"
