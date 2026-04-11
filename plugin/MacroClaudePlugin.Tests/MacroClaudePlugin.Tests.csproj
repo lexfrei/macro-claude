@@ -1,0 +1,48 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <RootNamespace>Loupedeck.MacroClaudePlugin.Tests</RootNamespace>
+
+
+    <!-- Test code suppressions: xunit requires underscores in test names
+         (CA1707), tests don't care about ConfigureAwait (CA2007), var
+         for local locals is fine in test scaffolding (IDE0008), and
+         unused discard assignments are common (IDE0058). -->
+    <NoWarn>$(NoWarn);CA1707;CA2007;IDE0008;IDE0058</NoWarn>
+  </PropertyGroup>
+
+  <!--
+    Tests consume the pure logic classes directly as linked sources rather
+    than via a ProjectReference to MacroClaudePlugin, which would drag in
+    the Loupedeck PluginApi native reference and custom build targets.
+    Each source file listed here has zero Loupedeck dependencies —
+    StateResolver, SessionSnapshot (+ SessionState), and SlotAssigner are
+    plain C# with only BCL types.
+  -->
+  <ItemGroup>
+    <Compile Include="..\MacroClaudePlugin\src\Status\StateResolver.cs">
+      <Link>Linked\StateResolver.cs</Link>
+    </Compile>
+    <Compile Include="..\MacroClaudePlugin\src\Status\SessionSnapshot.cs">
+      <Link>Linked\SessionSnapshot.cs</Link>
+    </Compile>
+    <Compile Include="..\MacroClaudePlugin\src\Status\SlotAssigner.cs">
+      <Link>Linked\SlotAssigner.cs</Link>
+    </Compile>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
+
+</Project>
