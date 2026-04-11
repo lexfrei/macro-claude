@@ -36,6 +36,7 @@ public class MacroClaudePlugin : Plugin
         // the bus. The snapshot store is wiped so stale zombie entries
         // never reach subscribers after a reload.
         this._busToken = SlotBus.AcquireOwnership();
+        PluginLog.Info($"macro-claude: SlotBus ownership acquired by token {this._busToken}");
 
         this._statusReader = new StatusReader(home);
         this._statusReader.SessionUpdated += this.OnSessionUpdated;
@@ -82,7 +83,11 @@ public class MacroClaudePlugin : Plugin
         }
         PluginLog.Verbose(
             $"macro-claude: session {snapshot.SessionId} → slot {slot} state={snapshot.State} name={snapshot.ShortName}");
-        SlotBus.Publish(this._busToken, slot, snapshot);
+        if (!SlotBus.Publish(this._busToken, slot, snapshot))
+        {
+            PluginLog.Warning(
+                $"macro-claude: SlotBus.Publish rejected slot {slot} — token stale or index out of range");
+        }
     }
 
     private void OnSessionRemoved(Object? sender, String sessionId)
@@ -98,6 +103,6 @@ public class MacroClaudePlugin : Plugin
             return;
         }
         PluginLog.Verbose($"macro-claude: session {sessionId} removed from slot {slot}");
-        SlotBus.Publish(this._busToken, slot, null);
+        _ = SlotBus.Publish(this._busToken, slot, null);
     }
 }

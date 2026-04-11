@@ -40,6 +40,9 @@
     <Compile Include="..\MacroClaudePlugin\src\Status\GitRepoResolver.cs">
       <Link>Linked\GitRepoResolver.cs</Link>
     </Compile>
+    <Compile Include="..\MacroClaudePlugin\src\Status\SlotBus.cs">
+      <Link>Linked\SlotBus.cs</Link>
+    </Compile>
   </ItemGroup>
 
   <ItemGroup>

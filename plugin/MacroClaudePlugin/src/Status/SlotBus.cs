@@ -48,11 +48,18 @@ internal static class SlotBus
             _currentOwner = token;
             Snapshots.Clear();
         }
-        PluginLog.Info($"macro-claude: SlotBus ownership acquired by token {token}");
         return token;
     }
 
-    public static void Publish(Guid ownerToken, Int32 slot, SessionSnapshot? snapshot)
+    // Publishes a snapshot (or clears one when snapshot is null) for
+    // the given slot. Returns true on success and false when the
+    // call is rejected — either because the caller's token no
+    // longer matches the active owner (zombie Plugin from a stale
+    // LPS reload), or because the slot index is outside the
+    // supported range. Silent rejection is intentional: zombie
+    // publishers fire every second and we do not want them to flood
+    // the log. Caller may log the false return if it cares.
+    public static Boolean Publish(Guid ownerToken, Int32 slot, SessionSnapshot? snapshot)
     {
         // Read the current owner inside the lock. Guid is a 128-bit
         // struct and the .NET memory model does not guarantee atomic
@@ -66,17 +73,13 @@ internal static class SlotBus
         {
             owner = _currentOwner;
         }
-        if (ownerToken != owner)
+        if (ownerToken == Guid.Empty || ownerToken != owner)
         {
-            // Zombie publisher from a previous Plugin.Load — silently
-            // drop. Not logged per-call because it would be a flood.
-            return;
+            return false;
         }
         if (slot is < 0 or >= ValidSlotCount)
         {
-            PluginLog.Warning(
-                $"macro-claude: SlotBus.Publish rejected out-of-range slot {slot.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
-            return;
+            return false;
         }
         if (snapshot is null)
         {
@@ -87,6 +90,20 @@ internal static class SlotBus
             Snapshots[slot] = snapshot;
         }
         SlotChanged?.Invoke(slot, snapshot);
+        return true;
+    }
+
+    // Test hook: reset everything. Not called by production code —
+    // tests invoke it in their setup to isolate from the static
+    // state that previous tests may have left behind.
+    internal static void ResetForTests()
+    {
+        lock (OwnerLock)
+        {
+            _currentOwner = Guid.Empty;
+            Snapshots.Clear();
+        }
+        SlotChanged = null;
     }
 
     public static SessionSnapshot? TryGetSnapshot(Int32 slot)
