@@ -6,7 +6,11 @@ SHELL := /bin/bash
 # Directories
 HOOKS_DIR           := hooks
 PLUGIN_DIR          := plugin
+PLUGIN_CSPROJ       := $(PLUGIN_DIR)/MacroClaudePlugin/src/MacroClaudePlugin.csproj
+PLUGIN_TESTS_CSPROJ := $(PLUGIN_DIR)/MacroClaudePlugin.Tests/MacroClaudePlugin.Tests.csproj
+PLUGIN_RELEASE_DIR  := $(PLUGIN_DIR)/MacroClaudePlugin/bin/Release
 VSCODE_EXT_DIR      := vscode-extension
+DIST_DIR            := dist
 
 .PHONY: help
 help: ## Show this help
@@ -58,12 +62,45 @@ format-vscode: ## Apply prettier + eslint --fix to extension sources
 		cd $(VSCODE_EXT_DIR) && npm run format && npm run lint:fix ; \
 	fi
 
+.PHONY: test
+test: ## Run xunit tests against the plugin pure logic
+	@dotnet test $(PLUGIN_TESTS_CSPROJ) --nologo
+
 .PHONY: install-hooks
 install-hooks: ## Merge session-monitor.sh into ~/.claude/settings.json
 	@bash $(HOOKS_DIR)/install.sh
+
+# ----------------------------------------------------------------
+# Release targets — build distributable artefacts in $(DIST_DIR).
+# ----------------------------------------------------------------
+
+.PHONY: release
+release: release-plugin release-vsix ## Build both .lplug4 and .vsix for a release
+
+.PHONY: release-plugin
+release-plugin: ## Build macropad plugin .lplug4 (requires macOS + LPS)
+	@mkdir -p $(DIST_DIR)
+	@dotnet build $(PLUGIN_CSPROJ) --configuration Release --nologo
+	@dotnet logiplugintool pack $(PLUGIN_RELEASE_DIR) $(DIST_DIR)/MacroClaudePlugin.lplug4
+	@dotnet logiplugintool verify $(DIST_DIR)/MacroClaudePlugin.lplug4
+	@dotnet logiplugintool metadata $(DIST_DIR)/MacroClaudePlugin.lplug4 | head -20
+	@echo "built: $(DIST_DIR)/MacroClaudePlugin.lplug4"
+
+.PHONY: release-vsix
+release-vsix: ## Build VS Code companion extension .vsix
+	@mkdir -p $(DIST_DIR)
+	@cd $(VSCODE_EXT_DIR) && npm ci && npm run compile
+	@cd $(VSCODE_EXT_DIR) && npx vsce package --no-dependencies --out ../$(DIST_DIR)/
+	@ls -la $(DIST_DIR)/macro-claude-bridge-*.vsix
+
+.PHONY: release-upload
+release-upload: ## Upload $(DIST_DIR)/* to the current GitHub release (needs gh + $(TAG))
+	@test -n "$(TAG)" || (echo "usage: make release-upload TAG=v1.0.0" && exit 1)
+	@gh release upload "$(TAG)" $(DIST_DIR)/MacroClaudePlugin.lplug4 $(DIST_DIR)/macro-claude-bridge-*.vsix --clobber
 
 .PHONY: clean
 clean: ## Remove build artefacts
 	@find $(PLUGIN_DIR) -type d -name 'bin' -print0 2>/dev/null | xargs -0 -I {} rm -rf -- {}
 	@find $(PLUGIN_DIR) -type d -name 'obj' -print0 2>/dev/null | xargs -0 -I {} rm -rf -- {}
 	@rm -rf -- $(VSCODE_EXT_DIR)/dist $(VSCODE_EXT_DIR)/node_modules $(VSCODE_EXT_DIR)/*.vsix 2>/dev/null || true
+	@rm -rf -- $(DIST_DIR) 2>/dev/null || true
