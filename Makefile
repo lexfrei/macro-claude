@@ -90,7 +90,13 @@ release-plugin: ## Build macropad plugin .lplug4 (requires macOS + LPS)
 release-vsix: ## Build VS Code companion extension .vsix
 	@mkdir -p $(DIST_DIR)
 	@cd $(VSCODE_EXT_DIR) && npm ci && npm run compile
-	@cd $(VSCODE_EXT_DIR) && npx vsce package --no-dependencies --out ../$(DIST_DIR)/
+	@# Delegate packaging to the npm `package` script so the prepackage
+	@# hook (copies ../LICENSE → ./LICENSE before vsce runs) and the
+	@# postpackage hook (deletes the copy after vsce finishes) run
+	@# automatically. That is the same entry point release.yml uses,
+	@# so local and CI produce bit-identical VSIXs.
+	@cd $(VSCODE_EXT_DIR) && npm run package
+	@mv $(VSCODE_EXT_DIR)/macro-claude-bridge-*.vsix $(DIST_DIR)/
 	@ls -la $(DIST_DIR)/macro-claude-bridge-*.vsix
 
 .PHONY: release-upload

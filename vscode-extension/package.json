@@ -52,7 +52,9 @@
     "lint": "eslint src",
     "lint:fix": "eslint src --fix",
     "format": "prettier --write \"src/**/*.ts\"",
-    "package": "vsce package --no-dependencies"
+    "prepackage": "node -e \"require('node:fs').copyFileSync('../LICENSE', './LICENSE')\"",
+    "package": "vsce package --no-dependencies",
+    "postpackage": "node -e \"require('node:fs').rmSync('./LICENSE', { force: true })\""
   },
   "devDependencies": {
     "@eslint/js": "^9.15.0",

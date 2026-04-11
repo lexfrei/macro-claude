@@ -1,0 +1,4 @@
+# Copied from repo root by the `prepackage` npm script before vsce
+# runs, so the VSIX embeds the MIT license text without duplicating
+# the source file in git.
+LICENSE

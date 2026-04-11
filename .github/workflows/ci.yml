@@ -99,7 +99,9 @@ jobs:
         run: npm run compile
 
       - name: vsce package (sanity check)
-        run: npx vsce package --no-dependencies
+        # npm run package runs the prepackage/postpackage hooks that
+        # stage ../LICENSE into the extension directory for vsce.
+        run: npm run package
 
       - name: Upload VSIX artifact
         uses: actions/upload-artifact@v4

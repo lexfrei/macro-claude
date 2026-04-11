@@ -92,7 +92,12 @@ jobs:
         id: pack
         working-directory: vscode-extension
         run: |
-          npx vsce package --no-dependencies
+          # Use the npm `package` script so the prepackage hook copies
+          # ../LICENSE into the extension directory and the postpackage
+          # hook removes it afterwards. This keeps the VSIX license text
+          # in sync with the root MIT LICENSE without committing a
+          # duplicate file.
+          npm run package
           VSIX=$(ls macro-claude-bridge-*.vsix | head -n 1)
           echo "vsix-name=${VSIX}" >> "$GITHUB_OUTPUT"
           ls -la "${VSIX}"
