@@ -15,6 +15,8 @@ namespace Loupedeck.MacroClaudePlugin.Status;
 // Rules, in priority order:
 //
 //   error    — interrupted marker OR StopFailure hook
+//   waiting  — Notification hook (Claude blocked on user input —
+//              plan approval, permission prompt, etc.)
 //   idle     — SessionStart or Stop hook, or unknown/missing event
 //   working  — working-class hook fired AND heartbeat age < 3s
 //   stuck    — heartbeat age > 30s AND cpu < 0.5%
@@ -48,6 +50,11 @@ public static class StateResolver
         if (interruptedMarker || lastEvent == "StopFailure")
         {
             return SessionState.Error;
+        }
+
+        if (lastEvent == "Notification")
+        {
+            return SessionState.Waiting;
         }
 
         if (lastEvent is null or "Stop" or "SessionStart")

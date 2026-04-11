@@ -13,8 +13,8 @@
 #   {
 #     "session_id":     "<uuid>",
 #     "cwd":            "/abs/path",
-#     "status":         "idle"|"working"|"error",
-#     "last_event":     "Stop"|"UserPromptSubmit"|...,
+#     "status":         "idle"|"working"|"waiting"|"error",
+#     "last_event":     "Stop"|"UserPromptSubmit"|"Notification"|...,
 #     "last_event_s":   <unix seconds>,
 #     "heartbeat_s":    <unix seconds>,
 #     "turn_started_s": <unix seconds>|null,
@@ -59,6 +59,12 @@ case "${event}" in
     ;;
   UserPromptSubmit | PreToolUse | PostToolUse)
     status="working"
+    ;;
+  Notification)
+    # Claude Code fires Notification when it is waiting on the user —
+    # plan-mode approval, permission prompt, interactive input.
+    # Surfaced on the macropad as its own "waiting for you" state.
+    status="waiting"
     ;;
   StopFailure)
     status="error"

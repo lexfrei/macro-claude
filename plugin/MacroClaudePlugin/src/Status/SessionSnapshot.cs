@@ -17,7 +17,7 @@ public sealed record SessionSnapshot(
     String RepoName = "")
 {
     // Duration of the current turn (working/thinking/stuck) or the time
-    // spent idle, depending on the state. Null for gone/error.
+    // spent idle, depending on the state. Null for gone/error/waiting.
     public TimeSpan? Elapsed => this.State switch
     {
         SessionState.Working or SessionState.Thinking or SessionState.Stuck
@@ -26,6 +26,7 @@ public sealed record SessionSnapshot(
             => this.IdleSince is { } idleSince ? this.UpdatedAt - idleSince : null,
         SessionState.Gone => null,
         SessionState.Error => null,
+        SessionState.Waiting => null,
         _ => null,
     };
 
@@ -83,4 +84,9 @@ public enum SessionState
 
     // StopFailure hook OR JSONL tail contains "[Request interrupted by user]".
     Error = 5,
+
+    // Notification hook — Claude is waiting on the user: plan-mode
+    // approval, permission prompt, or other interactive gate. The
+    // session is blocked on us, not on itself.
+    Waiting = 6,
 }

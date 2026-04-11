@@ -20,11 +20,16 @@ readonly SETTINGS_FILE="${HOME}/.claude/settings.json"
 
 # Events we hook into. SessionEnd removes the status file, the others
 # update it. PreToolUse/PostToolUse double as heartbeat pulses.
+# Notification fires when Claude Code is waiting on the user — plan
+# approval, permission prompt, etc. — and we surface that as its own
+# state on the macropad so the user can tell a blocked turn apart
+# from a finished turn.
 readonly EVENTS=(
   SessionStart
   UserPromptSubmit
   PreToolUse
   PostToolUse
+  Notification
   Stop
   StopFailure
   SessionEnd

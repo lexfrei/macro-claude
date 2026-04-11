@@ -39,6 +39,40 @@ public sealed class StateResolverTests
         Assert.Equal(SessionState.Error, state);
     }
 
+    [Fact]
+    public void Notification_Hook_Maps_To_Waiting()
+    {
+        // Claude Code fires Notification when it is blocked on a user
+        // decision — plan-mode approval, permission prompt, etc. The
+        // macropad must distinguish this from Stuck so the user can
+        // see that the session is waiting *on them*, not spinning.
+        var state = StateResolver.Determine(
+            lastEvent: "Notification",
+            heartbeatAt: Now,
+            cpuPercent: 0.0,
+            interruptedMarker: false,
+            now: Now);
+
+        Assert.Equal(SessionState.Waiting, state);
+    }
+
+    [Fact]
+    public void Error_Still_Wins_Over_Notification()
+    {
+        // StopFailure + Notification is a contrived race, but if the
+        // interrupted marker is present alongside a stale Notification
+        // last_event we want Error to dominate so the user sees the
+        // real problem first.
+        var state = StateResolver.Determine(
+            lastEvent: "Notification",
+            heartbeatAt: Now,
+            cpuPercent: 0.0,
+            interruptedMarker: true,
+            now: Now);
+
+        Assert.Equal(SessionState.Error, state);
+    }
+
     [Theory]
     [InlineData("Stop")]
     [InlineData("SessionStart")]
@@ -57,7 +91,6 @@ public sealed class StateResolverTests
 
     [Theory]
     [InlineData("SessionEnd")]
-    [InlineData("Notification")]
     [InlineData("CwdChanged")]
     public void Unknown_Events_Map_To_Idle(String lastEvent)
     {

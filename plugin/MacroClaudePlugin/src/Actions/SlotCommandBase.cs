@@ -195,6 +195,7 @@ public abstract class SlotCommandBase : PluginDynamicCommand
         SessionState.Thinking => new BitmapColor(120, 220, 230), // cyan
         SessionState.Stuck => new BitmapColor(255, 170, 60),     // amber
         SessionState.Error => new BitmapColor(240, 90, 90),      // red
+        SessionState.Waiting => new BitmapColor(200, 150, 255),  // lavender
         _ => new BitmapColor(90, 90, 95),
     };
 
@@ -203,12 +204,13 @@ public abstract class SlotCommandBase : PluginDynamicCommand
     // font renders correctly on MXCC.
     private static String GlyphFor(SessionState state) => state switch
     {
-        SessionState.Idle => "●",      // solid circle
-        SessionState.Working => "▶",   // right-pointing triangle
-        SessionState.Thinking => "⋯",  // horizontal ellipsis
-        SessionState.Stuck => "‼",     // double exclamation
-        SessionState.Error => "✗",     // heavy x
-        SessionState.Gone => "·",      // middle dot
+        SessionState.Idle => "●",       // solid circle
+        SessionState.Working => "▶",    // right-pointing triangle
+        SessionState.Thinking => "⋯",   // horizontal ellipsis
+        SessionState.Stuck => "‼",      // double exclamation
+        SessionState.Error => "✗",      // heavy x
+        SessionState.Waiting => "?",    // question mark — needs user input
+        SessionState.Gone => "·",       // middle dot
         _ => "?",
     };
 
