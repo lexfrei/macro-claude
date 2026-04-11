@@ -9,10 +9,14 @@ type: plugin4
 name: MacroClaude
 
 # Plugin name that is shown to the user.
-displayName: MacroClaude
+displayName: macro-claude
 
 # Short description of the plugin.
-description: Add a short description of the plugin here.
+description: |
+    Show the live state of running Claude Code sessions on Logi MX Creative
+    Console keys. Each key displays one session: idle, working, thinking,
+    stuck, or error, with elapsed turn time. Pressing a key focuses the
+    terminal that owns the session.
 
 # Name of the plugin library file.
 pluginFileName: MacroClaudePlugin.dll
@@ -21,10 +25,10 @@ pluginFileName: MacroClaudePlugin.dll
 version: 1.0
 
 # Author of the plugin. The author can be a company or an individual developer.
-author: lex
+author: Aleksei Sviridkin
 
 # Copyright information.
-copyright: Copyright © 2026 lex. All rights reserved.
+copyright: Copyright © 2026 Aleksei Sviridkin. MIT licensed.
 
 
 # ==================================================================================================
@@ -41,20 +45,14 @@ pluginFolderMac: bin
 
 # List of devices the plugin is optimized for.
 supportedDevices:
-    # LoupedeckCtFamily covers the following devices: Loupedeck CT, Live and Live S,
-    # Razer Stream Controller, and Razer Stream Controller X.
+    # LoupedeckCtFamily covers: Loupedeck CT, Live and Live S, Razer Stream
+    # Controller, Razer Stream Controller X, and Logi MX Creative Console.
     - LoupedeckCtFamily
 
-    # LoupedeckPlusFamily covers Loupedeck+ device. Uncomment the following line to support Loupedeck+.
-    #- LoupedeckPlusFamily
-
-# List of plugin capabilities.
-pluginCapabilities:
-    # Uncomment the following line if this plugin is an application plugin.
-    #- HasApplication
-
-    # Uncomment the following line if the plugin sends keyboard shortcuts to the target application.
-    #- ActivatesApplication
+# List of plugin capabilities. macro-claude is a universal plugin that does
+# not bind to any specific host application, so both HasApplication and
+# ActivatesApplication stay disabled.
+pluginCapabilities: []
 
 # Minimum Loupedeck version supported by the plugin.
 minimumLoupedeckVersion: 6.0
@@ -64,17 +62,16 @@ minimumLoupedeckVersion: 6.0
 # LOUPEDECK MARKETPLACE SETTINGS
 # ==================================================================================================
 
-# Name of the license that the plugin is licensed under. Select the one that you prefer.
-# NOTE: GPL license is not compatible with Loupedeck Marketplace.
+# Name of the license that the plugin is licensed under. Select the one that
+# you prefer. NOTE: GPL is not compatible with Loupedeck Marketplace.
 license: MIT
 
 # URL of the plugin license.
 licenseUrl: https://opensource.org/licenses/MIT
 
-# URL of the support page where the users can send improvement suggestions and report bugs.
-# The URL is shown in Loupedeck Marketplace. The page can be for example a GitHub issues page.
-# NOTE: This setting is recommended when publishing the plugin in Loupedeck Marketplace.
-#supportPageUrl: https://github.com/myusername/myplugin/issues
+# URL of the support page where users can send improvement suggestions and
+# report bugs. Shown in Loupedeck Marketplace.
+supportPageUrl: https://github.com/lexfrei/macro-claude/issues
 
-# URL of the plugin homepage. The URL is shown in Loupedeck Marketplace.
-#homePageUrl: https://github.com/myusername/myplugin
+# URL of the plugin homepage. Shown in Loupedeck Marketplace.
+homePageUrl: https://github.com/lexfrei/macro-claude
