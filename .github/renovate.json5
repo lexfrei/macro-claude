@@ -1,0 +1,135 @@
+{
+  $schema: "https://docs.renovatebot.com/renovate-schema.json",
+
+  // Sensible defaults + vulnerability alerts + OpenSSF scorecard.
+  // `:semanticCommits` omitted — the project uses its own commit
+  // shape via commitMessagePrefix below.
+  extends: [
+    "config:recommended",
+    "mergeConfidence:all-badges",
+    ":maintainLockFilesWeekly",
+    "security:openssf-scorecard",
+    ":disableDependencyDashboard",
+  ],
+
+  // Weekly cadence — keeps the PR inbox calm.
+  schedule: ["before 09:00 on monday"],
+  timezone: "Europe/Amsterdam",
+  prHourlyLimit: 0,
+  prConcurrentLimit: 10,
+
+  baseBranches: ["master"],
+  labels: ["dependencies"],
+
+  // Commit shape:
+  //   chore(<scope>): bump <pkg> from <from> to <to>
+  commitMessagePrefix: "chore",
+  commitMessageAction: "bump",
+  commitMessageTopic: "{{depName}}",
+  commitMessageExtra: "from {{currentVersion}} to {{newVersion}}",
+
+  // Vulnerability fixes bypass the weekly schedule.
+  vulnerabilityAlerts: {
+    enabled: true,
+    labels: ["dependencies", "security"],
+    minimumReleaseAge: "0 days",
+    schedule: "at any time",
+  },
+
+  // ----- Per-ecosystem rules. ------------------------------------------
+  packageRules: [
+    // === NuGet (.NET) ===================================================
+    // The plugin csproj and test csproj pull in xunit, StyleCop, Roslynator,
+    // Microsoft.NET.Test.Sdk, Google.Protobuf, Grpc.Tools, etc.
+    {
+      matchManagers: ["nuget"],
+      matchUpdateTypes: ["minor", "patch"],
+      groupName: "NuGet minor + patch",
+      semanticCommitScope: "nuget",
+    },
+    {
+      matchManagers: ["nuget"],
+      matchPackagePatterns: [
+        "^StyleCop\\.Analyzers",
+        "^Roslynator",
+      ],
+      groupName: "C# analyzers",
+      semanticCommitScope: "nuget",
+    },
+    {
+      matchManagers: ["nuget"],
+      matchPackagePatterns: ["^Google\\.Protobuf", "^Grpc\\.Tools"],
+      groupName: "Protobuf + gRPC Tools",
+      semanticCommitScope: "nuget",
+    },
+    {
+      matchManagers: ["nuget"],
+      matchPackagePatterns: ["^xunit", "^Microsoft\\.NET\\.Test"],
+      groupName: "xUnit test stack",
+      semanticCommitScope: "nuget",
+    },
+
+    // === npm (VS Code companion extension) ==============================
+    {
+      matchManagers: ["npm"],
+      matchUpdateTypes: ["minor", "patch"],
+      groupName: "npm minor + patch",
+      semanticCommitScope: "npm",
+    },
+    {
+      matchManagers: ["npm"],
+      matchPackageNames: ["esbuild", "typescript", "eslint"],
+      groupName: "TypeScript toolchain",
+      semanticCommitScope: "npm",
+    },
+    {
+      matchManagers: ["npm"],
+      matchPackagePatterns: ["^@typescript-eslint/"],
+      groupName: "typescript-eslint",
+      semanticCommitScope: "npm",
+    },
+    {
+      matchManagers: ["npm"],
+      matchPackageNames: ["@vscode/vsce"],
+      groupName: "vsce",
+      semanticCommitScope: "npm",
+    },
+
+    // === GitHub Actions =================================================
+    {
+      matchManagers: ["github-actions"],
+      semanticCommitScope: "ci",
+      groupName: "GitHub Actions",
+    },
+
+    // === .NET dotnet-tools.json (LogiPluginTool) ========================
+    {
+      matchManagers: ["nuget"],
+      matchFileNames: [".config/dotnet-tools.json"],
+      groupName: "dotnet local tools",
+      semanticCommitScope: "nuget",
+    },
+
+    // === Auto-merge: patch bumps ========================================
+    // Patch bumps auto-merge after CI is green. Majors and minors stay
+    // manual. GitHub Actions are pinned to SHA so even a patch could be
+    // malicious — they stay manual.
+    {
+      matchUpdateTypes: ["patch"],
+      matchManagers: ["nuget", "npm"],
+      automerge: true,
+      automergeType: "branch",
+      platformAutomerge: true,
+    },
+  ],
+
+  // ----- Disable managers that do not apply. ----------------------------
+  bundler: { enabled: false },
+  pip_requirements: { enabled: false },
+  poetry: { enabled: false },
+  terraform: { enabled: false },
+  kustomize: { enabled: false },
+  helmv3: { enabled: false },
+  gomod: { enabled: false },
+  dockerfile: { enabled: false },
+}
