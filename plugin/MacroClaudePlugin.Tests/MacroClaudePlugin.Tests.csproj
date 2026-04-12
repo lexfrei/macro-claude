@@ -55,6 +55,9 @@
     <Compile Include="..\MacroClaudePlugin\src\Focus\VSCodeUrlEncoder.cs">
       <Link>Linked\VSCodeUrlEncoder.cs</Link>
     </Compile>
+    <Compile Include="..\MacroClaudePlugin\src\Status\QuickFocusSelector.cs">
+      <Link>Linked\QuickFocusSelector.cs</Link>
+    </Compile>
   </ItemGroup>
 
   <ItemGroup>
