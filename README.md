@@ -12,25 +12,35 @@ macOS only. Tested against Claude Code CLI 2.1.101 on macOS 13+.
 ## What it does
 
 If you run several Claude Code sessions in parallel (iTerm2, VS Code
-integrated terminals, both at once), it is hard to notice which one has
-quietly gone idle and is waiting for your next prompt. macro-claude makes
-every running session a coloured key on the MX Creative Console:
+integrated terminals, Anthropic Claude Code VS Code extension, any
+combination), it is hard to notice which one has quietly gone idle
+and is waiting for your next prompt. macro-claude makes every
+running session one key on the MX Creative Console. Each key is a
+dark square with one big state glyph in an accent colour:
 
-- green — idle, assistant turn finished, waiting for you
-- blue — working, heartbeat is fresh, something is happening right now
-- cyan — thinking, transcript has gone quiet but the process is CPU-busy
-- orange — stuck, heartbeat is stale and CPU is near zero
-- red — error, last turn ended in `StopFailure` or was interrupted
-- dark gray — slot not in use
+| Glyph | State | Meaning |
+| ----- | ----- | ------- |
+| `●` | Idle | Assistant turn finished, waiting for you (green) |
+| `▶` | Working | Heartbeat is fresh, something is happening right now (blue) |
+| `⋯` | Thinking | Transcript has gone quiet but the process is CPU-busy (cyan) |
+| `‼` | Stuck | Heartbeat is stale and CPU is near zero (amber) |
+| `?` | Waiting | Blocked on user approval — plan-mode, permission prompt (lavender) |
+| `✗` | Error | Last turn ended in `StopFailure` or was interrupted (red) |
+| `·` | Gone | Slot not in use (grey) |
 
-Each key also shows the short project name and the elapsed turn time
-(`MM:SS` or `HH:MM:SS`, so an 8-hour turn is obvious at a glance).
+Logi Options+ renders the short project name and elapsed turn time
+(`MM:SS` / `HH:MM:SS`) as the label under each button, so an 8-hour
+turn is obvious at a glance. For git worktrees the label shows the
+main repo name, not the branch, so all worktrees of one project read
+as the same project.
 
-Pressing a key focuses the exact terminal that owns that session. For
-VS Code that's the exact integrated terminal via a companion extension;
-for iTerm2 it's the exact session (tab + split) via the iTerm2 Python
-API protobuf client, with automatic fallback to app-level activate if
-the iTerm2 API is off or the socket is missing.
+Pressing a key focuses the exact terminal that owns that session.
+For VS Code integrated terminals and Anthropic Claude Code VS Code
+extension sessions that's the owning window via a companion
+extension; for iTerm2 it's the exact session (tab + split) via
+iTerm2's AppleScript dictionary. Both VS Code and iTerm2 focus paths
+reach windows on other fullscreen Mission Control Spaces, which
+Accessibility-API-only tools cannot do.
 
 ## How it works
 
@@ -38,8 +48,9 @@ macro-claude is not a single program. It is a small pipeline with four
 moving parts that share state via files under `~/.claude/`:
 
 ```text
-Claude Code CLI ─┬─ Stop / UserPromptSubmit / Pre/PostToolUse / StopFailure
-                 │  hooks fire during every turn
+Claude Code CLI ─┬─ SessionStart / Stop / UserPromptSubmit /
+                 │  Pre/PostToolUse / Notification / StopFailure /
+                 │  SessionEnd  — hooks fire during every turn
                  ▼
         hooks/session-monitor.sh ───► ~/.claude/session-status/<sid>.json
                                                        │
@@ -89,27 +100,37 @@ System Events AXRaise by window title
 (single-Space fallback)
 ```
 
-### The four signals behind every state
+### The signals behind every state
 
 Claude Code does not fire a hook when you hit **Esc** or **Ctrl+C** to
 interrupt a turn, and extended thinking can run 30–60 seconds without
 writing anything to the JSONL transcript. A naive "hook heartbeat only"
 resolver would mark interrupted sessions as `working` forever and
-long-thinking sessions as `stuck`. macro-claude avoids both by combining:
+long-thinking sessions as `stuck`. macro-claude avoids both by
+combining five inputs:
 
 1. **Hook events** — latest event name and timestamps from
-   `~/.claude/session-status/<session_id>.json`, written by the bash hook
+   `~/.claude/session-status/<session_id>.json`, written by the bash
+   hook. `Notification` events are further disambiguated by their
+   `message` field: "Claude is waiting for your input" resolves to
+   Idle (turn handed back to the user), anything else resolves to
+   Waiting (permission / plan approval — real blocking gate).
 2. **JSONL mtime** — transcript modified time from
    `~/.claude/projects/**/<session_id>.jsonl`
 3. **Process CPU** — `ps -o pcpu=` on the PID recorded in
    `~/.claude/sessions/<pid>.json`
 4. **JSONL tail** — last 4 KB of the transcript, scanned for the
-   `[Request interrupted by user]` marker that Claude Code leaves behind
-   when you abort
+   `[Request interrupted by user]` marker that Claude Code leaves
+   behind when you abort
+5. **PID liveness** — `Process.GetProcessById` on every tracked pid
+   once per second; sessions whose process has exited are reaped
+   and their stale status files cleaned up, so closing a Claude
+   window on one side of the pipe removes the corresponding button
+   within a second.
 
-The final state is resolved by `StateResolver.Determine(...)`, a pure
-function with 10+ unit tests pinning the behaviour for every combination.
-Thresholds are:
+The final state is resolved by `StateResolver.Determine(...)`, a
+pure function with 108 unit tests pinning the behaviour for every
+combination. Thresholds are:
 
 - fresh heartbeat window — 3 seconds
 - stale heartbeat window — 30 seconds
@@ -123,21 +144,28 @@ macro-claude/
 ├── hooks/                        bash   session monitor + idempotent installer
 ├── plugin/
 │   ├── MacroClaudePlugin/        C# 8   Logi Actions SDK plugin (the macropad side)
-│   └── MacroClaudePlugin.Tests/  C# 8   xunit tests for pure logic (41 tests)
+│   └── MacroClaudePlugin.Tests/  C# 8   xunit tests for pure logic (108 tests)
 └── vscode-extension/             TS     companion extension (HTTP bridge for focus)
 ```
 
 ### hooks/
 
-Two bash scripts, both pass `shellcheck --severity=style --enable=all`:
+Two bash scripts, both pass `shellcheck --severity=style --enable=all`
+and both run under macOS's stock `/bin/bash` 3.2:
 
-- **`session-monitor.sh`** — hook entry point. Reads the hook JSON from
-  stdin, writes a per-session status file at
-  `~/.claude/session-status/<sid>.json`. Also deletes the file on
-  `SessionEnd`.
+- **`session-monitor.sh`** — hook entry point. Reads the hook JSON
+  from stdin, writes a per-session status file at
+  `~/.claude/session-status/<sid>.json`. Deletes the file on
+  `SessionEnd`. Disambiguates `Notification` hook between
+  permission / plan-approval (→ `waiting` status) and
+  turn-complete idle-prompt (→ `idle` status) by matching on the
+  `message` field.
 - **`install.sh`** — idempotent installer. Merges `session-monitor.sh`
-  into `~/.claude/settings.json` under the relevant hook keys without
-  touching any existing hook entries. Takes a `--uninstall` flag.
+  into `~/.claude/settings.json` under `SessionStart`,
+  `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `Notification`,
+  `Stop`, `StopFailure`, and `SessionEnd` hook keys without
+  touching any existing hook entries. Takes a `--uninstall` flag
+  and always backs up the existing `settings.json` first.
 
 ### plugin/MacroClaudePlugin/
 
@@ -202,7 +230,7 @@ linked sources rather than via a ProjectReference so it stays free of
 Loupedeck build targets.
 
 ```text
-  Passed!  - Failed: 0, Passed: 41, Total: 41, Duration: 14 ms
+  Passed!  - Failed: 0, Passed: 108, Total: 108, Duration: 24 ms
 ```
 
 ### vscode-extension/
@@ -295,13 +323,21 @@ code --install-extension macro-claude-bridge-0.0.1.vsix
 
 ### 4. Configure the macropad
 
-Open *Logi Options+* and find the **Claude** category. There are three
-sub-groups — **Claude / Page 1**, **Page 2**, **Page 3** — each with 9
-slot commands (`Slot 1..9`). Drag whichever slots you want onto your
-MX Creative Console keys. Sessions are assigned to slots on a first
-come, first served basis as they appear, so a reasonable layout is to
-place slots on one profile page and start macro-claude sessions as you
-need them.
+Open *Logi Options+* and find the **Claude** category. It contains
+nine separate commands — `Claude Session 1` … `Claude Session 9`
+— one per macropad slot. Drag them onto the physical keys of your
+MX Creative Console in whatever order you like (one per key).
+Sessions are assigned to slots on a first-come-first-served basis
+as they appear, so the button layout stays stable: the first
+claude you started always lives in Slot 1, the second in Slot 2,
+and so on. When a session finishes its slot is released and the
+next new session takes it over.
+
+Nine slots matches one full MXCC profile page. This is a hard
+cap — adding more would require adding more `ClaudeSlotNCommand`
+subclasses on the plugin side because MX Creative Keypad's
+Options+ UI does not expose parameterised commands as separate
+draggable entries the way the Loupedeck Live UI does.
 
 ## Configuration (optional)
 
@@ -339,7 +375,7 @@ baseline is high.
 ## Tests and linting
 
 ```bash
-make test              # dotnet test on pure logic (50 tests)
+make test              # dotnet test on pure logic (108 tests)
 make lint-shell        # shellcheck hooks
 make lint-vscode       # eslint + tsc --noEmit on the vscode extension
 ```
@@ -404,9 +440,10 @@ plugin and the extension into `dist/` in one step.
 
 **The plugin loads but no keys react.** Check
 `~/.claude/session-status/`. If it is empty, hooks are not firing —
-re-run `bash hooks/install.sh` and verify `~/.claude/settings.json` has
-the `Stop`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, and
-`StopFailure` hook events pointing at `session-monitor.sh`.
+re-run `bash hooks/install.sh` and verify `~/.claude/settings.json`
+has `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`,
+`Notification`, `Stop`, `StopFailure`, and `SessionEnd` hook events
+pointing at `session-monitor.sh`.
 
 **The plugin does not appear in Logi Options+ at all.** Check
 `~/Library/Application Support/Logi/LogiPluginService/Logs/plugin_logs/MacroClaude.log`.
@@ -493,11 +530,30 @@ localhost-only HTTP bridge to the VS Code companion extension.
 
 ## Status
 
-Working end-to-end: plugin loads into Logi Plugin Service, StatusReader
-watches all three source-of-truth directories, hooks are installed,
-FocusDispatcher handles VS Code and iTerm2 session-level focus via the
-iTerm2 Python API protobuf client with graceful fallback to app-level
-activate.
+Working end-to-end:
+
+- Plugin loads into Logi Plugin Service via the LPS reflection
+  discovery path (protected against the undocumented
+  `ClientApplication`-must-exist requirement).
+- StatusReader watches all three source-of-truth directories,
+  reconciles ghost sessions that FSEvents dropped, reaps dead
+  pids, and resolves missing pids against `sessions/<pid>.json`
+  when a hook races ahead of Claude Code.
+- Seven states: Idle / Working / Thinking / Stuck / Waiting /
+  Error / Gone, each with its own glyph and accent colour.
+- FocusDispatcher five-path cascade handles VS Code integrated
+  terminals, Anthropic Claude Code VS Code extension sessions,
+  iTerm2 via AppleScript (with Python API as a faster alternate
+  path), and reaches windows on other fullscreen Spaces.
+- 108 tests on the pure-logic core (`make test`), shellcheck
+  on the bash hooks, `tsc --noEmit` + eslint on the VS Code
+  companion extension.
+
+Known limitation: when two or more Anthropic Claude Code
+webview tabs live inside the **same** VS Code window, the
+plugin can only raise the window, not activate a specific tab
+within it. The public VS Code / Anthropic extension APIs do
+not expose a `focusSessionById` path.
 
 ## License
 
