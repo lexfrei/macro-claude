@@ -7,11 +7,10 @@ using Xunit;
 
 namespace Loupedeck.MacroClaudePlugin.Tests;
 
-// SlotBus is static and process-wide, so every test must reset it
-// before touching it. xUnit serialises test methods within a single
-// class by default, which is enough isolation as long as no other
-// test class touches SlotBus concurrently — keep all SlotBus tests
-// in this one file.
+// SlotBus is static and process-wide — serialise all classes that
+// touch it via the "SlotBusStatic" collection so xunit v3 does not
+// run them in parallel and stomp each other's ownership token.
+[Collection("SlotBusStatic")]
 public sealed class SlotBusTests : IDisposable
 {
     private static readonly DateTimeOffset Now = new(2026, 4, 12, 0, 0, 0, TimeSpan.Zero);
