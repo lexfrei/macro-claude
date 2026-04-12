@@ -10,11 +10,16 @@
     <RootNamespace>Loupedeck.MacroClaudePlugin.Tests</RootNamespace>
 
 
-    <!-- Test code suppressions: xunit requires underscores in test names
-         (CA1707), tests don't care about ConfigureAwait (CA2007), var
-         for local locals is fine in test scaffolding (IDE0008), and
-         unused discard assignments are common (IDE0058). -->
-    <NoWarn>$(NoWarn);CA1707;CA2007;IDE0008;IDE0058</NoWarn>
+    <!-- Test code suppressions:
+         CA1707 — xunit requires underscores in test names
+         CA1515 — linked sources are public in the plugin DLL but CA1515
+                  says "public types in an Exe should be internal"; the
+                  rule is wrong here because the same files must stay
+                  public for the plugin assembly
+         CA2007 — tests don't care about ConfigureAwait
+         IDE0008 — var for locals is fine in test scaffolding
+         IDE0058 — unused discard assignments are common -->
+    <NoWarn>$(NoWarn);CA1707;CA1515;CA2007;IDE0008;IDE0058</NoWarn>
   </PropertyGroup>
 
   <!--
