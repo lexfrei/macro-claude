@@ -303,13 +303,26 @@ dotnet logiplugintool verify dist/MacroClaudePlugin.lplug4
 
 ### 2. Install the hooks into your Claude Code settings
 
+**Recommended** — via the
+[Claude Code Companions](https://github.com/lexfrei/ccc) marketplace:
+
+```bash
+# one-time: add the marketplace
+/plugin marketplace add lexfrei/ccc
+
+# install the hook plugin
+/plugin install macro-claude@claude-code-companions
+```
+
+**Alternative** — manual install (if you don't use CCC):
+
 ```bash
 bash hooks/install.sh
 ```
 
-This is idempotent and creates a timestamped backup of your existing
-`~/.claude/settings.json` before writing. Uninstall with
-`bash hooks/install.sh --uninstall`.
+The manual path is idempotent and creates a timestamped backup of
+your existing `~/.claude/settings.json` before writing. Uninstall
+with `bash hooks/install.sh --uninstall`.
 
 ### 3. Install the VS Code extension (optional, only needed for VS Code)
 
