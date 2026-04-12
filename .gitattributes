@@ -41,3 +41,6 @@ Makefile    text eol=lf
 # Generated code — exclude from GitHub diff and language stats
 **/Generated/** linguist-generated
 **/generated/** linguist-generated
+
+# Vendored dependencies — collapse in PRs, exclude from language stats
+vendor/** linguist-vendored

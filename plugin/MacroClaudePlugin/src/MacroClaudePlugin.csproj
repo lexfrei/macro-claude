@@ -23,9 +23,14 @@
     <PluginShortName>MacroClaude</PluginShortName>
   </PropertyGroup>
 
+  <!--
+    PluginApi.dll reference: prefer the local LPS install (macOS dev
+    machine) and fall back to the vendored copy (CI on ubuntu).
+  -->
   <ItemGroup>
     <Reference Include="PluginApi">
-      <HintPath>$(PluginApiDir)PluginApi.dll</HintPath>
+      <HintPath Condition="Exists('$(PluginApiDir)PluginApi.dll')">$(PluginApiDir)PluginApi.dll</HintPath>
+      <HintPath Condition="!Exists('$(PluginApiDir)PluginApi.dll')">$(MSBuildThisFileDirectory)..\..\..\vendor\PluginApi.dll</HintPath>
     </Reference>
   </ItemGroup>
 
