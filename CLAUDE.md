@@ -476,6 +476,27 @@ cannot reach the target.
   the root `.editorconfig` first. Most pragmatic suppressions are there
   already. Do NOT disable rules per-file.
 
+## Hook distribution via CCC
+
+The session-monitor hook is distributed as a Claude Code plugin
+in the [lexfrei/ccc](https://github.com/lexfrei/ccc) marketplace
+under `hooks/macro-claude/`. Users install it with:
+
+```
+/plugin install macro-claude@claude-code-companions
+```
+
+The script `hooks/macro-claude/scripts/session-monitor.sh` in CCC
+is a **copy** of `hooks/session-monitor.sh` from this repo. It is
+NOT fetched from this repo at runtime — Claude Code clones the
+plugin into `~/.claude/plugins/cache/` and `${CLAUDE_PLUGIN_ROOT}`
+points at that local copy.
+
+**When updating `session-monitor.sh`**, you must also sync the copy
+in CCC: copy the file, bump `version` in
+`hooks/macro-claude/.claude-plugin/plugin.json`, commit, and push.
+There is no automated sync mechanism.
+
 ## Commit conventions
 
 Global CLAUDE.md rules apply. Project-specific additions:
