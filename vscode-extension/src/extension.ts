@@ -161,7 +161,10 @@ async function handleRequest(
     return;
   }
 
-  const body = await readBody(req);
+  const body = await readBody(req, res);
+  if (body === null) {
+    return;
+  }
   const payload = parseFocusRequest(body);
   if (payload === undefined) {
     res.writeHead(400, { 'content-type': 'application/json' });
@@ -344,7 +347,10 @@ async function readProcessTree(): Promise<Map<number, number>> {
   return tree;
 }
 
-async function readBody(req: http.IncomingMessage): Promise<string> {
+async function readBody(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+): Promise<string | null> {
   // Cap at 64 KB to prevent a local OOM attack. The legitimate
   // payload is {"pid": <number>} — well under 1 KB.
   const maxBytes = 65536;
@@ -353,8 +359,11 @@ async function readBody(req: http.IncomingMessage): Promise<string> {
   for await (const chunk of req) {
     total += (chunk as Buffer).length;
     if (total > maxBytes) {
-      req.destroy();
-      throw new Error('request body too large');
+      if (!res.headersSent) {
+        res.writeHead(413, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ error: 'request body too large' }));
+      }
+      return null;
     }
     chunks.push(chunk as Buffer);
   }
