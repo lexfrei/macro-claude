@@ -795,23 +795,22 @@ public sealed class StatusReader : IDisposable
         var output = stdoutTask.GetAwaiter().GetResult() ?? String.Empty;
         _ = stderrTask;
 
-        // Guard against a catastrophic ps failure (segfault, ENOMEM,
-        // permission denied) where the command produced no output at
-        // all. In that case reaping would treat every tracked PID as
-        // dead and delete their status files.
+        // We intentionally ignore proc.ExitCode. The only thing
+        // that matters is whether a PID appears in the output rows:
+        //   present → process alive, update its CPU
+        //   absent  → process dead, reap the session
+        // Exit code is not checked because BSD/macOS `ps -p` returns
+        // 1 whenever ANY requested PID is missing — which is the
+        // normal dead-PID detection path, not an error. Checking
+        // exit code would either require a complex guard that
+        // confuses reviewers, or would break dead-PID cleanup
+        // entirely if set to bail on non-zero.
         //
-        // IMPORTANT: we intentionally do NOT bail on ExitCode != 0
-        // alone. BSD/macOS `ps -p <list>` returns exit 1 whenever
-        // ANY of the listed PIDs is not found — which is the normal
-        // case when a Claude session dies between poll ticks. The
-        // output still contains valid rows for the PIDs that ARE
-        // alive, and the reap loop below correctly treats the
-        // missing ones as dead. Changing this guard to
-        // `ExitCode != 0` unconditionally would break the entire
-        // dead-PID cleanup pipeline: no dead session would ever be
-        // detected because ps always returns 1 once at least one
-        // PID has exited.
-        if (proc.ExitCode != 0 && String.IsNullOrWhiteSpace(output))
+        // If ps crashed catastrophically (no output at all), the
+        // seenPids set stays empty and the reap loop below would
+        // remove every session. Guard against that with a simple
+        // empty-output check.
+        if (String.IsNullOrWhiteSpace(output))
         {
             return;
         }
