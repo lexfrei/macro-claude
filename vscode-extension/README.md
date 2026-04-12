@@ -32,4 +32,4 @@ code --install-extension macro-claude-bridge-*.vsix
 
 ## License
 
-MIT. See the root [LICENSE](../LICENSE) file in the macro-claude repo.
+BSD 3-Clause. See the root [LICENSE](../LICENSE) file in the macro-claude repo.
