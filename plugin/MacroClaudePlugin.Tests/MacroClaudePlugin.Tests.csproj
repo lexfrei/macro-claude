@@ -52,6 +52,9 @@
     <Compile Include="..\MacroClaudePlugin\src\Status\ReconcileDecision.cs">
       <Link>Linked\ReconcileDecision.cs</Link>
     </Compile>
+    <Compile Include="..\MacroClaudePlugin\src\Status\OrphanStatusDecision.cs">
+      <Link>Linked\OrphanStatusDecision.cs</Link>
+    </Compile>
     <Compile Include="..\MacroClaudePlugin\src\Focus\VSCodeUrlEncoder.cs">
       <Link>Linked\VSCodeUrlEncoder.cs</Link>
     </Compile>

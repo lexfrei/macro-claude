@@ -7,6 +7,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- `orphanReapSeconds` override in `~/.claude/macro-claude.json` for the
+  new orphan-status sweep. Defaults to 300 s (5 min); reap fires from
+  the 1 Hz poll tick.
 - iTerm2 session-level focus via the iTerm2 Python API protobuf client
   (Unix domain socket + manual WebSocket handshake + Google.Protobuf).
   On press, `ITerm2Client.FocusSessionByPidAsync` walks every
@@ -60,8 +63,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `FocusDispatcher.FocusAsync` cascade now inserts iTerm2
   session-level focus between the VS Code HTTP bridge and the
   app-level activate fallback.
+- Quick Focus tile text label no longer prefixes the session's
+  short name with an arrow glyph. The bitmap icon already carries
+  the "where to focus" affordance via its ⏎ / ▶ / · glyph, so
+  duplicating it in the text crowded the label.
 
 ### Fixed
+- Stale `~/.claude/session-status/<sid>.json` files with no matching
+  `~/.claude/sessions/<pid>.json` (typical after a hard reboot or any
+  unclean Claude Code exit) are no longer shown as a "stuck" slot
+  forever. A new `OrphanStatusDecision` sweep reaps accumulators whose
+  `Pid=0`, `HasStatusFile=true`, and `max(HookHeartbeatAt,
+  JsonlMtimeAt)` is older than `orphanReapSeconds`, and deletes the
+  stale file from disk. Liveness mirrors the max-of-hook-and-jsonl
+  rule `StatusReader.Emit` already uses, so a session still streaming
+  transcript output without fresh hooks is not mistakenly reaped. The
+  two existing reap paths — `ReapDeadPidSessions` (Pid>0) and
+  `ReconcileSessionStatusDirectory` (file-on-disk) — could not reach
+  this case.
 - **Plugin load failures caused by missing `MacroClaudeApplication`
   stub.** LPS silently refuses to load any assembly that does not
   contain a concrete `ClientApplication` subclass, even when

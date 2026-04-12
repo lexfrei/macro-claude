@@ -14,7 +14,8 @@ namespace Loupedeck.MacroClaudePlugin.Status;
 //     "freshHeartbeatSeconds": 3,
 //     "staleHeartbeatSeconds": 30,
 //     "cpuActiveThreshold": 1.0,
-//     "cpuIdleThreshold": 0.5
+//     "cpuIdleThreshold": 0.5,
+//     "orphanReapSeconds": 300
 //   }
 //
 // The file is loaded once in StatusReader's constructor. Changes at
@@ -29,6 +30,12 @@ public sealed record StateResolverConfig
     public Double? CpuActiveThreshold { get; init; }
 
     public Double? CpuIdleThreshold { get; init; }
+
+    // Age threshold past which a session with Pid=0 and a hook-written
+    // status file is considered orphaned (its matching sessions/<pid>.json
+    // never arrived, typically because of a hard reboot). The default
+    // lives on StatusReader, not here, since this type is pure data.
+    public TimeSpan? OrphanReapWindow { get; init; }
 
     public static StateResolverConfig? TryLoadFromFile(String path)
     {
@@ -47,6 +54,7 @@ public sealed record StateResolverConfig
                 StaleHeartbeatWindow = TryGetSeconds(root, "staleHeartbeatSeconds"),
                 CpuActiveThreshold = TryGetDouble(root, "cpuActiveThreshold"),
                 CpuIdleThreshold = TryGetDouble(root, "cpuIdleThreshold"),
+                OrphanReapWindow = TryGetSeconds(root, "orphanReapSeconds"),
             };
         }
         catch (IOException)

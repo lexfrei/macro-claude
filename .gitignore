@@ -63,3 +63,6 @@ logs/
 .env
 .env.local
 *.local
+
+# Per-repo Claude Code state (sessions, scheduler lock, transient logs)
+.claude/
