@@ -799,22 +799,20 @@ public sealed class StatusReader : IDisposable
         // that matters is whether a PID appears in the output rows:
         //   present → process alive, update its CPU
         //   absent  → process dead, reap the session
+        //
         // Exit code is not checked because BSD/macOS `ps -p` returns
         // 1 whenever ANY requested PID is missing — which is the
-        // normal dead-PID detection path, not an error. Checking
-        // exit code would either require a complex guard that
-        // confuses reviewers, or would break dead-PID cleanup
-        // entirely if set to bail on non-zero.
+        // normal dead-PID detection path, not an error.
         //
-        // If ps crashed catastrophically (no output at all), the
-        // seenPids set stays empty and the reap loop below would
-        // remove every session. Guard against that with a simple
-        // empty-output check.
-        if (String.IsNullOrWhiteSpace(output))
-        {
-            return;
-        }
-
+        // Empty output is also not guarded against: if all tracked
+        // PIDs have exited between ticks, ps legitimately returns
+        // no rows, and the reap loop below correctly removes all of
+        // them. A hypothetical catastrophic ps crash would also
+        // produce empty output and reap everything, but that is
+        // recoverable — hooks recreate session state on the next
+        // event. The alternative (guarding on empty output) would
+        // permanently strand dead sessions when every Claude window
+        // is closed at once.
         var seenPids = new HashSet<Int32>();
         foreach (var line in output.Split('\n'))
         {
