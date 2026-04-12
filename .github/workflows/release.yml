@@ -44,10 +44,8 @@ jobs:
         with:
           dotnet-version: "8.0.x"
 
-      - name: dotnet test
-        run: |
-          dotnet test plugin/MacroClaudePlugin.Tests/MacroClaudePlugin.Tests.csproj \
-            --configuration Release --nologo
+      - name: dotnet test (xunit v3 native runner)
+        run: dotnet run --project plugin/MacroClaudePlugin.Tests/MacroClaudePlugin.Tests.csproj --configuration Release
 
       - uses: actions/setup-node@v6
         with:

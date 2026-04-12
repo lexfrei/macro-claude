@@ -54,19 +54,8 @@ jobs:
       - name: Restore test project
         run: dotnet restore plugin/MacroClaudePlugin.Tests/MacroClaudePlugin.Tests.csproj
 
-      - name: Build test project (strict analyzers on)
-        run: dotnet build plugin/MacroClaudePlugin.Tests/MacroClaudePlugin.Tests.csproj --configuration Release --no-restore --nologo
-
-      - name: Run tests
-        run: dotnet test plugin/MacroClaudePlugin.Tests/MacroClaudePlugin.Tests.csproj --configuration Release --no-build --nologo --logger "trx;LogFileName=test-results.trx"
-
-      - name: Upload test results
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: dotnet-test-results
-          path: "**/TestResults/*.trx"
-          if-no-files-found: warn
+      - name: Build and run tests (xunit v3 native runner)
+        run: dotnet run --project plugin/MacroClaudePlugin.Tests/MacroClaudePlugin.Tests.csproj --configuration Release
 
   # ----------------------------------------------------------------
   # VS Code companion extension — typecheck, lint, compile, and

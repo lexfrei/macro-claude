@@ -795,6 +795,17 @@ public sealed class StatusReader : IDisposable
         var output = stdoutTask.GetAwaiter().GetResult() ?? String.Empty;
         _ = stderrTask;
 
+        // If ps itself failed (non-zero exit or empty output when we
+        // asked for known PIDs), do NOT reap anything — a transient
+        // failure would otherwise delete status files for live
+        // sessions that just happened to be missing from partial
+        // output. Better to skip one CPU-update cycle than to
+        // permanently lose a session until the hook recreates it.
+        if (proc.ExitCode != 0 && String.IsNullOrWhiteSpace(output))
+        {
+            return;
+        }
+
         var seenPids = new HashSet<Int32>();
         foreach (var line in output.Split('\n'))
         {
