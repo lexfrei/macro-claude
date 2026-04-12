@@ -108,7 +108,13 @@ case "${event}" in
 esac
 
 existing="{}"
-if [[ -f "${status_file}" ]]; then
+# -s checks that the file is non-empty. An empty file can happen
+# when a previous invocation of this script was killed between
+# `> ${status_file}` (which truncates) and the jq write — once the
+# file is zero-byte, `cat` returns an empty string, jq rejects it
+# as invalid JSON, set -o errexit bails, and the file stays empty
+# forever. Guard against that loop here.
+if [[ -s "${status_file}" ]]; then
   existing="$(cat -- "${status_file}")"
 fi
 
