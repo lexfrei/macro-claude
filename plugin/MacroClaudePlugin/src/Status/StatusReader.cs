@@ -795,12 +795,22 @@ public sealed class StatusReader : IDisposable
         var output = stdoutTask.GetAwaiter().GetResult() ?? String.Empty;
         _ = stderrTask;
 
-        // If ps itself failed (non-zero exit or empty output when we
-        // asked for known PIDs), do NOT reap anything — a transient
-        // failure would otherwise delete status files for live
-        // sessions that just happened to be missing from partial
-        // output. Better to skip one CPU-update cycle than to
-        // permanently lose a session until the hook recreates it.
+        // Guard against a catastrophic ps failure (segfault, ENOMEM,
+        // permission denied) where the command produced no output at
+        // all. In that case reaping would treat every tracked PID as
+        // dead and delete their status files.
+        //
+        // IMPORTANT: we intentionally do NOT bail on ExitCode != 0
+        // alone. BSD/macOS `ps -p <list>` returns exit 1 whenever
+        // ANY of the listed PIDs is not found — which is the normal
+        // case when a Claude session dies between poll ticks. The
+        // output still contains valid rows for the PIDs that ARE
+        // alive, and the reap loop below correctly treats the
+        // missing ones as dead. Changing this guard to
+        // `ExitCode != 0` unconditionally would break the entire
+        // dead-PID cleanup pipeline: no dead session would ever be
+        // detected because ps always returns 1 once at least one
+        // PID has exited.
         if (proc.ExitCode != 0 && String.IsNullOrWhiteSpace(output))
         {
             return;
