@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/lexfrei/macro-claude/actions/workflows/ci.yml/badge.svg)](https://github.com/lexfrei/macro-claude/actions/workflows/ci.yml)
 [![Release](https://github.com/lexfrei/macro-claude/actions/workflows/release.yml/badge.svg)](https://github.com/lexfrei/macro-claude/actions/workflows/release.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License: BSD-3-Clause](https://img.shields.io/badge/License-BSD--3--Clause-blue.svg)](LICENSE)
 
 Live status of every running Claude Code session on a Logitech MX Creative
 Console, with single-key focus to the terminal that owns the session.
@@ -557,4 +557,4 @@ not expose a `focusSessionById` path.
 
 ## License
 
-MIT. See `LICENSE` or `LoupedeckPackage.yaml`.
+BSD 3-Clause. See `LICENSE`.
