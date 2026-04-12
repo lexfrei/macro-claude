@@ -2,7 +2,7 @@
   "name": "macro-claude-bridge",
   "displayName": "macro-claude VS Code Bridge",
   "description": "Local HTTP bridge so the macro-claude plugin can focus VS Code integrated terminals that own Claude Code sessions.",
-  "version": "0.0.2",
+  "version": "0.0.0-dev",
   "private": true,
   "publisher": "lexfrei",
   "license": "BSD-3-Clause",

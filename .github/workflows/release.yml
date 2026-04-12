@@ -86,15 +86,20 @@ jobs:
         working-directory: vscode-extension
         run: npm run compile
 
+      - name: Stamp version from tag
+        working-directory: vscode-extension
+        run: |
+          # Strip leading 'v' from the tag (v0.1.0 → 0.1.0) and
+          # write it into package.json so the VSIX carries the
+          # same version as the GitHub release.
+          VERSION="${GITHUB_REF_NAME#v}"
+          npm version "${VERSION}" --no-git-tag-version --allow-same-version
+          echo "Extension version set to ${VERSION}"
+
       - name: Package VSIX
         id: pack
         working-directory: vscode-extension
         run: |
-          # Use the npm `package` script so the prepackage hook copies
-          # ../LICENSE into the extension directory and the postpackage
-          # hook removes it afterwards. This keeps the VSIX license text
-          # in sync with the root MIT LICENSE without committing a
-          # duplicate file.
           npm run package
           VSIX=$(ls macro-claude-bridge-*.vsix | head -n 1)
           echo "vsix-name=${VSIX}" >> "$GITHUB_OUTPUT"
