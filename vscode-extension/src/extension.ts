@@ -345,8 +345,17 @@ async function readProcessTree(): Promise<Map<number, number>> {
 }
 
 async function readBody(req: http.IncomingMessage): Promise<string> {
+  // Cap at 64 KB to prevent a local OOM attack. The legitimate
+  // payload is {"pid": <number>} — well under 1 KB.
+  const maxBytes = 65536;
   const chunks: Buffer[] = [];
+  let total = 0;
   for await (const chunk of req) {
+    total += (chunk as Buffer).length;
+    if (total > maxBytes) {
+      req.destroy();
+      throw new Error('request body too large');
+    }
     chunks.push(chunk as Buffer);
   }
   return Buffer.concat(chunks).toString('utf-8');

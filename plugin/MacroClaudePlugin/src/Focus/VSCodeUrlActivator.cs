@@ -88,6 +88,11 @@ internal static class VSCodeUrlActivator
                 return false;
             }
 
+            // Drain stdout/stderr asynchronously before blocking on
+            // WaitForExit — prevents pipe-buffer deadlock.
+            var stderrTask = process.StandardError.ReadToEndAsync();
+            var stdoutTask = process.StandardOutput.ReadToEndAsync();
+
             var finished = process.WaitForExit((Int32)ExecutionTimeout.TotalMilliseconds);
             if (!finished)
             {
@@ -104,13 +109,24 @@ internal static class VSCodeUrlActivator
                 return false;
             }
 
+            try
+            {
+                process.WaitForExit();
+            }
+            catch (InvalidOperationException)
+            {
+                // Already disposed.
+            }
+
+            _ = stdoutTask;
+            var stderr = stderrTask.GetAwaiter().GetResult() ?? String.Empty;
+
             if (process.ExitCode == 0)
             {
                 PluginLog.Info($"macro-claude: opened {url}");
                 return true;
             }
 
-            var stderr = process.StandardError.ReadToEnd();
             PluginLog.Warning(
                 $"macro-claude: /usr/bin/open exited {process.ExitCode.ToString(System.Globalization.CultureInfo.InvariantCulture)}: {stderr.Trim()}");
             return false;

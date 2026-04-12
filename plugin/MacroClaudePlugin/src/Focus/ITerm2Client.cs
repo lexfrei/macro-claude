@@ -268,6 +268,11 @@ internal sealed class ITerm2Client : IDisposable
                 return null;
             }
 
+            // Drain stdout/stderr asynchronously before WaitForExit
+            // to prevent pipe-buffer deadlock.
+            var stdoutTask = proc.StandardOutput.ReadToEndAsync();
+            var stderrTask = proc.StandardError.ReadToEndAsync();
+
             if (!proc.WaitForExit(3000))
             {
                 try
@@ -280,12 +285,23 @@ internal sealed class ITerm2Client : IDisposable
                 return null;
             }
 
+            try
+            {
+                proc.WaitForExit();
+            }
+            catch (InvalidOperationException)
+            {
+                // Already disposed.
+            }
+
+            _ = stderrTask;
+
             if (proc.ExitCode != 0)
             {
                 return null;
             }
 
-            var output = proc.StandardOutput.ReadToEnd().Trim();
+            var output = (stdoutTask.GetAwaiter().GetResult() ?? String.Empty).Trim();
             var parts = output.Split(' ', StringSplitOptions.RemoveEmptyEntries);
             if (parts.Length != 2)
             {

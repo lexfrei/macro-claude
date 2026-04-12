@@ -142,4 +142,5 @@ jq \
         ),
         idle_since_s:   (if $status == "idle" then $now else null end)
       }
-  ' <<<"${existing}" >"${status_file}"
+  ' <<<"${existing}" >"${status_file}.tmp" \
+  && mv "${status_file}.tmp" "${status_file}"

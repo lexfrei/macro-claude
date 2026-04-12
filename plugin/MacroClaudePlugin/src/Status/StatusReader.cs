@@ -764,7 +764,13 @@ public sealed class StatusReader : IDisposable
         {
             return;
         }
-        var output = proc.StandardOutput.ReadToEnd();
+
+        // Drain stdout/stderr asynchronously before WaitForExit to
+        // avoid a pipe-buffer deadlock when ps writes enough output
+        // to fill the OS pipe (~64 KB).
+        var stdoutTask = proc.StandardOutput.ReadToEndAsync();
+        var stderrTask = proc.StandardError.ReadToEndAsync();
+
         if (!proc.WaitForExit(500))
         {
             try
@@ -774,11 +780,20 @@ public sealed class StatusReader : IDisposable
             catch (InvalidOperationException)
             {
             }
-            catch (Exception)
-            {
-            }
             return;
         }
+
+        try
+        {
+            proc.WaitForExit();
+        }
+        catch (InvalidOperationException)
+        {
+            // Already disposed.
+        }
+
+        var output = stdoutTask.GetAwaiter().GetResult() ?? String.Empty;
+        _ = stderrTask;
 
         var seenPids = new HashSet<Int32>();
         foreach (var line in output.Split('\n'))
@@ -804,14 +819,19 @@ public sealed class StatusReader : IDisposable
             }
         }
 
-        // PIDs missing from ps output — process is dead, remove.
+        // PIDs missing from ps output — process is dead, remove and
+        // also clean up the stale status file so reconciliation does
+        // not resurrect the session on the next plugin startup.
         foreach (var pid in pids)
         {
             if (!seenPids.Contains(pid)
-                && this._sessionIdByPid.TryRemove(pid, out var sessionId)
-                && this._bySessionId.TryRemove(sessionId, out _))
+                && this._sessionIdByPid.TryRemove(pid, out var sessionId))
             {
-                this.SessionRemoved?.Invoke(this, sessionId);
+                TryDeleteStaleStatusFile(this._sessionStatusDir, sessionId);
+                if (this._bySessionId.TryRemove(sessionId, out _))
+                {
+                    this.SessionRemoved?.Invoke(this, sessionId);
+                }
             }
         }
     }
