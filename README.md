@@ -313,12 +313,21 @@ This is idempotent and creates a timestamped backup of your existing
 
 ### 3. Install the VS Code extension (optional, only needed for VS Code)
 
+Install from the
+[VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=lexfrei.macro-claude-bridge):
+
+```bash
+code --install-extension lexfrei.macro-claude-bridge
+```
+
+Or build from source:
+
 ```bash
 cd vscode-extension
 npm install
 npm run compile
-npx vsce package --no-dependencies
-code --install-extension macro-claude-bridge-0.0.1.vsix
+npm run package
+code --install-extension macro-claude-bridge-*.vsix
 ```
 
 ### 4. Configure the macropad
@@ -386,21 +395,13 @@ The `.github/workflows/ci.yml` pipeline runs on every push to `main` and
 every pull request with three parallel jobs on `ubuntu-latest`:
 
 1. **shellcheck hooks** — strict mode (`--severity=style --enable=all`)
-2. **dotnet test (pure logic)** — restore, build, and run xUnit tests
-   against `plugin/MacroClaudePlugin.Tests/`. Test results upload as
-   `.trx` artifacts.
+2. **dotnet build + test** — builds the full plugin (using the vendored
+   `PluginApi.dll` from `vendor/`) with strict analyzers, then runs the
+   xunit v3 test suite (108 tests) via the native in-process runner.
 3. **vscode-extension** — `npm ci`, `tsc --noEmit`, eslint
    strict-type-checked, `esbuild` compile, and `vsce package` sanity
    check. The resulting VSIX uploads as a workflow artifact on every
-   green run, so you always have a fresh extension build to grab.
-
-**What CI does NOT build:** the macropad plugin itself. The plugin csproj
-references `PluginApi.dll` from a macOS-only Logi Plugin Service install
-(`/Applications/Utilities/LogiPluginService.app/Contents/MonoBundle/`).
-Automating an LPS installation inside a GitHub-hosted macOS runner is
-brittle, so plugin builds stay local. CI still validates everything that
-can be validated without `PluginApi.dll` — which is all the pure logic
-under test.
+   green run.
 
 ## Releases
 
@@ -420,21 +421,18 @@ That triggers `.github/workflows/release.yml`, which re-runs the full
 CI gate, builds the VSIX, creates a GitHub release with installation
 notes, and attaches the `macro-claude-bridge-*.vsix` to it.
 
-### Adding the `.lplug4` to the release
+### Plugin build artifact
 
-Because CI cannot build the macropad plugin, the `.lplug4` must be
-attached manually from a local macOS machine after the release workflow
-completes:
+CI builds the plugin on every push (using the vendored
+`PluginApi.dll`). For local development, `dotnet build` produces
+the DLL directly and installs it into LPS via a `.link` file — no
+`.lplug4` packaging needed.
+
+To produce a distributable `.lplug4` for sharing:
 
 ```bash
-# from the tagged commit, on a machine with LPS installed
 make release-plugin               # produces dist/MacroClaudePlugin.lplug4
-make release-upload TAG=v1.0.0    # uploads everything in dist/ to the release
 ```
-
-`make release-upload` uses `gh release upload --clobber` so it is safe
-to re-run. `make release` is an umbrella target that builds both the
-plugin and the extension into `dist/` in one step.
 
 ## Troubleshooting
 
