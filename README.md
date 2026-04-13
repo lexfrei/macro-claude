@@ -373,7 +373,8 @@ or non-positive value falls back to the constant default used by
   "freshHeartbeatSeconds": 3,
   "staleHeartbeatSeconds": 30,
   "cpuActiveThreshold": 1.0,
-  "cpuIdleThreshold": 0.5
+  "cpuIdleThreshold": 0.5,
+  "orphanReapSeconds": 300
 }
 ```
 
@@ -383,6 +384,7 @@ or non-positive value falls back to the constant default used by
 | `staleHeartbeatSeconds` | 30 | Heartbeat is "stale" if age > N s; triggers stuck/thinking discrimination |
 | `cpuActiveThreshold` | 1.0 | CPU ≥ N % with stale heartbeat → thinking |
 | `cpuIdleThreshold` | 0.5 | CPU ≤ N % with stale heartbeat → stuck |
+| `orphanReapSeconds` | 300 | Reap session-status files with Pid=0 whose max of hook heartbeat and transcript mtime is older than N s (hard-reboot cleanup) |
 
 The config file is read once in `StatusReader`'s constructor. Changes
 at runtime require a plugin reload (touch the `.link` file or restart

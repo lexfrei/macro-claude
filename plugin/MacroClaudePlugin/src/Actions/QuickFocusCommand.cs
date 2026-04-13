@@ -15,8 +15,11 @@ namespace Loupedeck.MacroClaudePlugin.Actions;
 //   ▶ blue   — all sessions running, nothing idle to focus
 //   · grey   — no sessions at all
 //
-// The text label (GetCommandDisplayName) shows "→ <ShortName>"
-// when a target is available, or "Claude Code" otherwise.
+// The text label (GetCommandDisplayName) shows "<ShortName>"
+// when a target is available, or "Claude Code" otherwise. The
+// "where to focus" arrow is carried by the bitmap glyph only —
+// repeating it in the text label duplicates the affordance and
+// crowds the short name.
 //
 // Selection logic lives in QuickFocusSelector (under Status/)
 // so it can be linked-sourced into the test project without
@@ -128,7 +131,7 @@ public sealed class QuickFocusCommand : PluginDynamicCommand
         {
             return "Claude Code";
         }
-        return $"→ {target.ShortName}{Environment.NewLine}{FormatElapsed(target.Elapsed)}";
+        return $"{target.ShortName}{Environment.NewLine}{FormatElapsed(target.Elapsed)}";
     }
 
     private static String FormatElapsed(TimeSpan? duration)

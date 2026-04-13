@@ -267,11 +267,11 @@ public static class FocusDispatcher
         }
         catch (IOException)
         {
-            return Array.Empty<String>();
+            return [];
         }
         catch (UnauthorizedAccessException)
         {
-            return Array.Empty<String>();
+            return [];
         }
     }
 

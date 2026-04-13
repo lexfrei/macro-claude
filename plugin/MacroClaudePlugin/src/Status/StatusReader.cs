@@ -23,6 +23,11 @@ public sealed class StatusReader : IDisposable
 {
     private const Int32 PollIntervalMs = 1000;
 
+    // Age threshold past which an accumulator with Pid=0 and a
+    // hook-written status file is considered orphaned and reaped.
+    // Overridable via ~/.claude/macro-claude.json:orphanReapSeconds.
+    public static readonly TimeSpan DefaultOrphanReapWindow = TimeSpan.FromMinutes(5);
+
     private readonly String _sessionStatusDir;
     private readonly String _sessionsDir;
     private readonly String _projectsDir;
@@ -187,9 +192,16 @@ public sealed class StatusReader : IDisposable
         {
             this.ReconcileSessionStatusDirectory();
             this.ResolveMissingPids();
+
+            // Refresh JSONL mtimes before the orphan sweep: the reap
+            // decision folds JsonlMtimeAt into liveness (max of hook
+            // heartbeat and transcript mtime), and using the previous
+            // tick's cached value could drop a session that started
+            // streaming transcript output in the last second.
+            this.RefreshJsonlSignals();
+            this.ReapOrphanedStatusSessions();
             this.ReapDeadPidSessions();
             this.RefreshCpuUsage();
-            this.RefreshJsonlSignals();
             this.EmitAllSnapshots();
         }
         catch (Exception ex)
@@ -246,6 +258,94 @@ public sealed class StatusReader : IDisposable
         }
     }
 
+    // A hard reboot (or any unclean Claude Code exit that skips
+    // Stop/SessionEnd) can leave ~/.claude/session-status/<sid>.json
+    // on disk while the matching ~/.claude/sessions/<pid>.json is
+    // gone. ReapDeadPidSessions skips it (Pid never reached a
+    // positive value), ReconcileSessionStatusDirectory skips it (the
+    // file is still on disk), and the stuck slot shows forever.
+    //
+    // This sweep fires on every tick and, for any accumulator that
+    // has Pid=0, HasStatusFile=true, and a HookHeartbeatAt older than
+    // the threshold, deletes the stale disk file, drops the
+    // accumulator, and notifies subscribers. Threshold defaults to
+    // 5 minutes and is overridable per-machine via
+    // ~/.claude/macro-claude.json:orphanReapSeconds.
+    private void ReapOrphanedStatusSessions()
+    {
+        if (this._bySessionId.IsEmpty)
+        {
+            return;
+        }
+
+        var threshold = this._resolverConfig?.OrphanReapWindow ?? DefaultOrphanReapWindow;
+        var now = DateTimeOffset.UtcNow;
+
+        var candidates = new List<OrphanCandidate>(this._bySessionId.Count);
+        foreach (var acc in this._bySessionId.Values)
+        {
+            candidates.Add(new OrphanCandidate(
+                acc.SessionId,
+                acc.Pid,
+                acc.HasStatusFile,
+                acc.HookHeartbeatAt,
+                acc.JsonlMtimeAt));
+        }
+
+        foreach (var sessionId in OrphanStatusDecision.SessionsToReap(candidates, now, threshold))
+        {
+            // Revalidate inline before doing anything destructive.
+            // FileSystemWatcher events fire on thread-pool threads
+            // and can mutate an accumulator's Pid / heartbeat / jsonl
+            // mtime between snapshot and here. If the session is no
+            // longer an orphan, skip without deleting its status
+            // file — otherwise a freshly-live session would lose its
+            // on-disk state until the next hook write.
+            if (!this._bySessionId.TryGetValue(sessionId, out var current))
+            {
+                continue;
+            }
+            if (current.Pid > 0 || !current.HasStatusFile)
+            {
+                continue;
+            }
+            var liveness = OrphanStatusDecision.LatestOf(current.HookHeartbeatAt, current.JsonlMtimeAt);
+            if (liveness is null || now - liveness.Value <= threshold)
+            {
+                continue;
+            }
+
+            // If the stale file cannot be deleted (transient lock,
+            // tight permission race), keep the accumulator so the
+            // next tick retries. Dropping the in-memory entry while
+            // the disk file survives would let the next
+            // InitialScan / watcher Created event resurrect the
+            // exact same orphan. The minStalenessAge guard also
+            // refuses to delete a file that was bumped by a hook
+            // between revalidation and this call — one last TOCTOU
+            // shield.
+            if (!TryDeleteStaleStatusFile(this._sessionStatusDir, sessionId, minStalenessAge: threshold, now: now))
+            {
+                continue;
+            }
+
+            if (this._bySessionId.TryRemove(sessionId, out var removed))
+            {
+                // Defensive: the revalidation above pins Pid=0 at
+                // read time, but another thread could still have
+                // observed a sessions/<pid>.json write between that
+                // check and TryRemove. Mirror the cleanup the other
+                // reap paths do so we cannot leak an entry in
+                // _sessionIdByPid.
+                if (removed.Pid > 0)
+                {
+                    this._sessionIdByPid.TryRemove(removed.Pid, out _);
+                }
+                this.SessionRemoved?.Invoke(this, sessionId);
+            }
+        }
+    }
+
     private static Boolean IsProcessAlive(Int32 pid)
     {
         if (pid <= 0)
@@ -269,13 +369,44 @@ public sealed class StatusReader : IDisposable
         }
     }
 
-    private static void TryDeleteStaleStatusFile(String sessionStatusDir, String sessionId)
+    // Attempts to delete the stale session-status file and reports
+    // whether the file is now gone. Callers that want strict retry
+    // semantics (e.g., the orphan sweep) check the return and keep
+    // the accumulator around when false so the next tick retries.
+    // Existing callers that ignore the return were already tolerant
+    // of leftover files via complementary reap paths, so preserving
+    // their behaviour is intentional.
+    private static Boolean TryDeleteStaleStatusFile(String sessionStatusDir, String sessionId)
+        => TryDeleteStaleStatusFile(sessionStatusDir, sessionId, minStalenessAge: null, now: DateTimeOffset.UtcNow);
+
+    // Overload that enforces a file-mtime guard: only delete if the
+    // on-disk status file is at least `minStalenessAge` old. Closes
+    // the last TOCTOU window between the in-memory revalidation and
+    // the actual File.Delete — a concurrent hook write would bump
+    // the file's mtime, and we refuse to delete a freshly-touched
+    // file even if the accumulator snapshot still looked stale.
+    //
+    // Passing minStalenessAge=null disables the guard (used by the
+    // PID-based reap paths that already know the process is gone).
+    private static Boolean TryDeleteStaleStatusFile(
+        String sessionStatusDir,
+        String sessionId,
+        TimeSpan? minStalenessAge,
+        DateTimeOffset now)
     {
+        var path = Path.Combine(sessionStatusDir, sessionId + ".json");
         try
         {
-            var path = Path.Combine(sessionStatusDir, sessionId + ".json");
             if (File.Exists(path))
             {
+                if (minStalenessAge is { } minAge)
+                {
+                    var mtime = new DateTimeOffset(File.GetLastWriteTimeUtc(path), TimeSpan.Zero);
+                    if (now - mtime <= minAge)
+                    {
+                        return false;
+                    }
+                }
                 File.Delete(path);
             }
         }
@@ -286,6 +417,24 @@ public sealed class StatusReader : IDisposable
         catch (UnauthorizedAccessException)
         {
             // Permissions — bail, harmless.
+        }
+
+        // Wrap the final existence probe too. A race with another
+        // process mutating permissions on the session-status dir
+        // could throw here and would otherwise bubble into OnPollTick
+        // and cut the rest of the tick short. Treat any failure as
+        // "file still present, retry next tick" — conservative.
+        try
+        {
+            return !File.Exists(path);
+        }
+        catch (IOException)
+        {
+            return false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
         }
     }
 
@@ -900,7 +1049,7 @@ public sealed class StatusReader : IDisposable
         // Freshest heartbeat is the max of the hook-written heartbeat and
         // the transcript JSONL mtime. That way we cover both streaming
         // token output and tool-call activity.
-        var heartbeat = Max(acc.HookHeartbeatAt, acc.JsonlMtimeAt);
+        var heartbeat = OrphanStatusDecision.LatestOf(acc.HookHeartbeatAt, acc.JsonlMtimeAt);
 
         var state = StateResolver.Determine(
             lastEvent: acc.LastEvent,
@@ -928,19 +1077,6 @@ public sealed class StatusReader : IDisposable
     {
         var configPath = Path.Combine(homeDirectory, ".claude", "macro-claude.json");
         return StateResolverConfig.TryLoadFromFile(configPath);
-    }
-
-    private static DateTimeOffset? Max(DateTimeOffset? a, DateTimeOffset? b)
-    {
-        if (a is null)
-        {
-            return b;
-        }
-        if (b is null)
-        {
-            return a;
-        }
-        return a.Value > b.Value ? a : b;
     }
 
     // -------------------------------------------------------------------

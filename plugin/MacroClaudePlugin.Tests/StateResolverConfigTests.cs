@@ -47,14 +47,15 @@ public sealed class StateResolverConfigTests : IDisposable
     }
 
     [Fact]
-    public void TryLoadFromFile_Parses_All_Four_Fields()
+    public void TryLoadFromFile_Parses_All_Five_Fields()
     {
         var path = this.TempFile("""
             {
               "freshHeartbeatSeconds": 5,
               "staleHeartbeatSeconds": 60,
               "cpuActiveThreshold": 2.5,
-              "cpuIdleThreshold": 0.25
+              "cpuIdleThreshold": 0.25,
+              "orphanReapSeconds": 120
             }
             """);
 
@@ -65,6 +66,7 @@ public sealed class StateResolverConfigTests : IDisposable
         Assert.Equal(TimeSpan.FromSeconds(60), config.StaleHeartbeatWindow);
         Assert.Equal(2.5, config.CpuActiveThreshold);
         Assert.Equal(0.25, config.CpuIdleThreshold);
+        Assert.Equal(TimeSpan.FromSeconds(120), config.OrphanReapWindow);
     }
 
     [Fact]
@@ -103,7 +105,8 @@ public sealed class StateResolverConfigTests : IDisposable
               "freshHeartbeatSeconds": 0,
               "staleHeartbeatSeconds": -5,
               "cpuActiveThreshold": -1.0,
-              "cpuIdleThreshold": 0.5
+              "cpuIdleThreshold": 0.5,
+              "orphanReapSeconds": 0
             }
             """);
 
@@ -114,6 +117,7 @@ public sealed class StateResolverConfigTests : IDisposable
         Assert.Null(config.StaleHeartbeatWindow);
         Assert.Null(config.CpuActiveThreshold);
         Assert.Equal(0.5, config.CpuIdleThreshold);
+        Assert.Null(config.OrphanReapWindow);
     }
 
     [Fact]
