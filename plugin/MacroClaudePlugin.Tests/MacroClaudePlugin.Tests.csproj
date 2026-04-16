@@ -61,6 +61,9 @@
     <Compile Include="..\MacroClaudePlugin\src\Status\QuickFocusSelector.cs">
       <Link>Linked\QuickFocusSelector.cs</Link>
     </Compile>
+    <Compile Include="..\MacroClaudePlugin\src\Status\TranscriptPathEncoder.cs">
+      <Link>Linked\TranscriptPathEncoder.cs</Link>
+    </Compile>
   </ItemGroup>
 
   <ItemGroup>
