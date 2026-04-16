@@ -51,7 +51,7 @@ public sealed class TranscriptPathEncoderTests
     [Fact]
     public void Encode_Null_Returns_Empty()
     {
-        var actual = TranscriptPathEncoder.Encode(null!);
+        var actual = TranscriptPathEncoder.Encode(cwd: null);
 
         Assert.Equal(String.Empty, actual);
     }

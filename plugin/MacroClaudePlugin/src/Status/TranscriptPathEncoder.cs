@@ -20,7 +20,12 @@ namespace Loupedeck.MacroClaudePlugin.Status;
 // never breaks correctness.
 public static class TranscriptPathEncoder
 {
-    public static String Encode(String cwd)
+    // Nullable parameter on purpose: Accumulator.Cwd starts out as
+    // String.Empty but a malformed hook status file could in principle
+    // leave it null. Returning String.Empty on null / empty makes the
+    // failure mode "direct-path check misses, fall back to recursive
+    // scan" instead of throwing inside the poll tick.
+    public static String Encode(String? cwd)
     {
         if (String.IsNullOrEmpty(cwd))
         {
