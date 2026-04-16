@@ -64,6 +64,9 @@
     <Compile Include="..\MacroClaudePlugin\src\Status\TranscriptPathEncoder.cs">
       <Link>Linked\TranscriptPathEncoder.cs</Link>
     </Compile>
+    <Compile Include="..\MacroClaudePlugin\src\Status\TranscriptLocator.cs">
+      <Link>Linked\TranscriptLocator.cs</Link>
+    </Compile>
   </ItemGroup>
 
   <ItemGroup>
