@@ -81,14 +81,33 @@ internal static class SlotBus
         {
             return false;
         }
+        SessionSnapshot? previous;
         if (snapshot is null)
         {
-            Snapshots.TryRemove(slot, out _);
+            Snapshots.TryRemove(slot, out previous);
         }
         else
         {
+            previous = Snapshots.TryGetValue(slot, out var existing) ? existing : null;
             Snapshots[slot] = snapshot;
         }
+
+        // Drop no-op SlotChanged — same slot, same snapshot content.
+        // Still return true: the publish itself was accepted, even
+        // though no subscriber needed to know about it. StatusReader
+        // re-emits every poll tick with a fresh UpdatedAt stamp but
+        // otherwise identical content, and we do not want 10 Hz of
+        // ActionImageChanged going into the Loupedeck plugin log.
+        // Null→null (clearing an already-empty slot) is also a no-op.
+        if (snapshot is null && previous is null)
+        {
+            return true;
+        }
+        if (snapshot is not null && snapshot.ContentEquals(previous))
+        {
+            return true;
+        }
+
         SlotChanged?.Invoke(slot, snapshot);
         return true;
     }
