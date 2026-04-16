@@ -35,7 +35,17 @@ public sealed class TranscriptLocator(String projectsDir)
         }
 
         var resolved = this.Resolve(sessionId, cwd);
-        this._cache[sessionId] = resolved;
+
+        // Only cache hits. A miss on the first tick just means the
+        // session's JSONL transcript hasn't been flushed yet — Claude
+        // Code writes it asynchronously after it starts. Caching a
+        // null would keep that session's JsonlMtimeAt stuck at null
+        // forever, starving StateResolver of the transcript-mtime
+        // signal it uses to detect thinking/stuck transitions.
+        if (resolved is not null)
+        {
+            this._cache[sessionId] = resolved;
+        }
         return resolved;
     }
 

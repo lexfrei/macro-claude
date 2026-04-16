@@ -102,7 +102,7 @@ public sealed class TranscriptLocatorTests : IDisposable
     }
 
     [Fact]
-    public void Locate_Returns_Null_And_Caches_Miss_When_No_File()
+    public void Locate_Returns_Null_But_Does_Not_Cache_Miss()
     {
         var cwd = "/tmp/nosuch";
         var sid = "sid-miss";
@@ -112,15 +112,19 @@ public sealed class TranscriptLocatorTests : IDisposable
         var first = locator.Locate(sid, cwd);
         Assert.Null(first);
 
-        // Now create the file. A non-cached miss would return the new
-        // path on the second call; a cached miss must keep returning
-        // null until Forget() is called.
+        // A young session whose session-status file is on disk
+        // seconds before Claude Code has flushed the first JSONL
+        // transcript would otherwise have its JsonlMtimeAt stuck
+        // at null forever. Re-checking the filesystem on every
+        // subsequent tick costs one File.Exists syscall, which is
+        // cheap next to the other per-tick work (ps fork+exec,
+        // JSONL tail read). Only hits are worth caching.
         var late = Path.Combine(this._projectsDir, TranscriptPathEncoder.Encode(cwd), sid + ".jsonl");
         Directory.CreateDirectory(Path.GetDirectoryName(late)!);
         File.WriteAllText(late, "{}");
 
         var second = locator.Locate(sid, cwd);
-        Assert.Null(second);
+        Assert.Equal(late, second);
     }
 
     [Fact]
