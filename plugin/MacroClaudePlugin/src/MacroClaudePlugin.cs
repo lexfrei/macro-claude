@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.Threading.Tasks;
 
 using Loupedeck.MacroClaudePlugin.Status;
 
@@ -49,15 +50,30 @@ public class MacroClaudePlugin : Plugin
         this._statusReader.SessionUpdated += this.OnSessionUpdated;
         this._statusReader.SessionRemoved += this.OnSessionRemoved;
 
-        try
+        // Start on a worker thread. Load() MUST return to LPS within
+        // 10 seconds or the plugin gets marked as failed for the life
+        // of the LPS process. StatusReader.Start() does an InitialScan
+        // that emits SessionUpdated synchronously, each one ultimately
+        // calls PluginDynamicCommand.ActionImageChanged which does an
+        // IPC roundtrip to LPS — and LPS itself is blocked waiting for
+        // Load() to return. That deadlocks until LPS gives up on the
+        // Load timeout. Off-thread InitialScan breaks the cycle: Load
+        // returns immediately, LPS finishes whatever it was doing, and
+        // the InitialScan fires ActionImageChanged into a responsive
+        // LPS a moment later.
+        var reader = this._statusReader;
+        _ = Task.Run(() =>
         {
-            this._statusReader.Start();
-            PluginLog.Info("macro-claude: StatusReader started");
-        }
-        catch (Exception ex)
-        {
-            PluginLog.Error(ex, "macro-claude: StatusReader failed to start");
-        }
+            try
+            {
+                reader.Start();
+                PluginLog.Info("macro-claude: StatusReader started");
+            }
+            catch (Exception ex)
+            {
+                PluginLog.Error(ex, "macro-claude: StatusReader failed to start");
+            }
+        });
     }
 
     public override void Unload()
