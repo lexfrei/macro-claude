@@ -16,24 +16,6 @@ public sealed record SessionSnapshot(
     DateTimeOffset UpdatedAt,
     String RepoName = "")
 {
-    // True if every render-relevant field matches. UpdatedAt is
-    // excluded on purpose: StatusReader stamps it with DateTimeOffset.UtcNow
-    // on every poll tick, so including it would defeat dedup and
-    // fire SlotChanged every second for every slot. IdleSince and
-    // TurnStartedAt are stable markers set by the hook and included,
-    // so a session that flipped states back into Idle (new IdleSince)
-    // still triggers a redraw.
-    public Boolean ContentEquals(SessionSnapshot? other)
-        => other is not null
-            && this.SessionId == other.SessionId
-            && this.Pid == other.Pid
-            && this.Cwd == other.Cwd
-            && this.DisplayName == other.DisplayName
-            && this.State == other.State
-            && this.TurnStartedAt == other.TurnStartedAt
-            && this.IdleSince == other.IdleSince
-            && this.RepoName == other.RepoName;
-
     // Duration of the current turn (working/thinking/stuck) or the time
     // spent idle, depending on the state. Null for gone/error/waiting.
     public TimeSpan? Elapsed => this.State switch

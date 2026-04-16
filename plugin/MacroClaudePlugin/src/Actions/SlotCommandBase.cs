@@ -101,8 +101,14 @@ public abstract class SlotCommandBase : PluginDynamicCommand
         {
             return;
         }
-        PluginLog.Verbose(
-            $"macro-claude: slot {slot} changed → {this.GetType().Name}.ActionImageChanged (snapshot={(snapshot is null ? "cleared" : snapshot.SessionId)})");
+
+        // No verbose log here: OnSessionUpdated already logs
+        // (suppressed to state transitions by SessionLogDecision),
+        // and this handler runs at 1 Hz per active slot to keep the
+        // elapsed-time counter on the macropad label ticking. Logging
+        // from here would flood the log with one line per slot per
+        // second in steady state.
+        _ = snapshot;
         this.ActionImageChanged();
     }
 
