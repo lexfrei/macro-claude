@@ -6,6 +6,32 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- Plugin load timeout on filesystem caches with thousands of JSONL
+  files. `StatusReader` used to locate each session's transcript by
+  recursively enumerating every file under `~/.claude/projects` on
+  every poll tick and on every initial scan. On a 7 500-file cache
+  this reliably exceeded the 10 s `Plugin.Load()` budget, causing
+  Logi Plugin Service to mark the plugin as failed and show broken
+  placeholders on every button. Transcript lookup now derives the
+  project directory directly from the session cwd using the same
+  encoding Claude Code uses on disk (`[^A-Za-z0-9_-]` → `-`), turning
+  a poll-tick cost of O(sessions × files) into O(1). A recursive
+  fallback still runs once per session if the direct path is missing
+  (e.g. Claude Code changes its encoding convention) and the result
+  is memoised, so the cost is paid at most once per session lifetime.
+
+### Changed
+- Verbose plugin logs only emit on slot or state transitions, not on
+  every poll tick. `SlotBus.Publish` compares incoming snapshots with
+  the slot's current content (`SessionSnapshot.ContentEquals`,
+  excluding `UpdatedAt`) and drops the `SlotChanged` event when
+  nothing render-relevant has changed. `OnSessionUpdated` uses
+  `SessionLogDecision` to memoize the last logged (slot, state) per
+  session and suppress the matching verbose line. The per-repaint
+  `GetCommandImage` verbose line is also removed. In steady state
+  `MacroClaude.log` no longer grows at ~10 lines/sec.
+
 ### Added
 - `orphanReapSeconds` override in `~/.claude/macro-claude.json` for the
   new orphan-status sweep. Defaults to 300 s (5 min); reap fires from
