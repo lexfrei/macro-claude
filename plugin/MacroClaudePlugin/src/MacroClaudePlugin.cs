@@ -16,6 +16,7 @@ public class MacroClaudePlugin : Plugin
     private StatusReader? _statusReader;
     private SlotAssigner? _slotAssigner;
     private Guid _busToken = Guid.Empty;
+    private Task? _startTask;
 
     // Per-session memo of the last (slot, state) that OnSessionUpdated
     // actually logged. SessionLogDecision consults it to suppress the
@@ -62,12 +63,18 @@ public class MacroClaudePlugin : Plugin
         // the InitialScan fires ActionImageChanged into a responsive
         // LPS a moment later.
         var reader = this._statusReader;
-        _ = Task.Run(() =>
+        this._startTask = Task.Run(() =>
         {
             try
             {
                 reader.Start();
                 PluginLog.Info("macro-claude: StatusReader started");
+            }
+            catch (ObjectDisposedException)
+            {
+                // Unload() raced ahead and disposed the watchers
+                // before Start() finished enabling them. Expected
+                // when LPS restarts rapidly; not an error.
             }
             catch (Exception ex)
             {
@@ -78,6 +85,22 @@ public class MacroClaudePlugin : Plugin
 
     public override void Unload()
     {
+        // Drain the worker that Load() fired — it may still be inside
+        // InitialScan when LPS asks us to Unload (rare but possible on
+        // a rapid reload). Waiting avoids disposing watchers out from
+        // under it, which would otherwise surface as a caught
+        // ObjectDisposedException on the worker thread and leave the
+        // plugin in a half-started state.
+        try
+        {
+            this._startTask?.Wait(TimeSpan.FromSeconds(5));
+        }
+        catch (AggregateException)
+        {
+            // The worker already logged its own exception.
+        }
+        this._startTask = null;
+
         if (this._statusReader != null)
         {
             this._statusReader.SessionUpdated -= this.OnSessionUpdated;
