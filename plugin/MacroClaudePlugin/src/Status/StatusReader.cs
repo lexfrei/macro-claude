@@ -37,6 +37,7 @@ public sealed class StatusReader : IDisposable
     private readonly ConcurrentDictionary<Int32, String> _sessionIdByPid;
     private readonly System.Timers.Timer _pollTimer;
     private readonly StateResolverConfig? _resolverConfig;
+    private readonly TranscriptLocator _transcripts;
     private Boolean _disposed;
 
     public event EventHandler<SessionSnapshot>? SessionUpdated;
@@ -58,6 +59,7 @@ public sealed class StatusReader : IDisposable
 
         this._bySessionId = new ConcurrentDictionary<String, Accumulator>();
         this._sessionIdByPid = new ConcurrentDictionary<Int32, String>();
+        this._transcripts = new TranscriptLocator(this._projectsDir);
 
         this._statusWatcher = new FileSystemWatcher(this._sessionStatusDir, "*.json")
         {
@@ -162,6 +164,7 @@ public sealed class StatusReader : IDisposable
         if (this._bySessionId.TryRemove(sessionId, out var acc))
         {
             this._sessionIdByPid.TryRemove(acc.Pid, out _);
+            this._transcripts.Forget(sessionId);
             this.SessionRemoved?.Invoke(this, sessionId);
         }
     }
@@ -182,6 +185,7 @@ public sealed class StatusReader : IDisposable
         if (this._sessionIdByPid.TryRemove(pid, out var sessionId)
             && this._bySessionId.TryRemove(sessionId, out _))
         {
+            this._transcripts.Forget(sessionId);
             this.SessionRemoved?.Invoke(this, sessionId);
         }
     }
@@ -253,6 +257,7 @@ public sealed class StatusReader : IDisposable
                 {
                     this._sessionIdByPid.TryRemove(removed.Pid, out _);
                 }
+                this._transcripts.Forget(sessionId);
                 this.SessionRemoved?.Invoke(this, sessionId);
             }
         }
@@ -341,6 +346,7 @@ public sealed class StatusReader : IDisposable
                 {
                     this._sessionIdByPid.TryRemove(removed.Pid, out _);
                 }
+                this._transcripts.Forget(sessionId);
                 this.SessionRemoved?.Invoke(this, sessionId);
             }
         }
@@ -536,6 +542,7 @@ public sealed class StatusReader : IDisposable
                 {
                     this._sessionIdByPid.TryRemove(removed.Pid, out _);
                 }
+                this._transcripts.Forget(sessionId);
                 this.SessionRemoved?.Invoke(this, sessionId);
             }
         }
@@ -778,12 +785,18 @@ public sealed class StatusReader : IDisposable
     // -------------------------------------------------------------------
     //
     // Transcript file lives at:
-    //   ~/.claude/projects/<path-encoded-cwd>/<session_id>.jsonl
+    //   ~/.claude/projects/<encoded-cwd>/<session_id>.jsonl
     //
-    // where <path-encoded-cwd> is the cwd with '/' replaced by '-'. Instead
-    // of reconstructing the exact path we scan all project folders for
-    // files matching "<session_id>.jsonl" and pick the one with the latest
-    // mtime as the authoritative transcript.
+    // where <encoded-cwd> is produced by TranscriptPathEncoder
+    // (every non-[A-Za-z0-9_-] char replaced by '-'). Lookup is
+    // delegated to TranscriptLocator, which computes the direct
+    // path in O(1) and caches the result. If the direct path does
+    // not exist, TranscriptLocator falls back to a one-shot
+    // recursive scan — the old behaviour — and memoizes that too.
+    //
+    // See commit history for why this matters: the recursive scan
+    // across thousands of JSONL files was blowing past the LPS
+    // Plugin.Load() timeout on cold FS cache.
 
     private void RefreshJsonlSignals()
     {
@@ -796,7 +809,7 @@ public sealed class StatusReader : IDisposable
         {
             try
             {
-                var transcript = this.FindTranscript(acc.SessionId);
+                var transcript = this._transcripts.Locate(acc.SessionId, acc.Cwd);
                 if (transcript is null)
                 {
                     continue;
@@ -814,26 +827,6 @@ public sealed class StatusReader : IDisposable
             catch (UnauthorizedAccessException)
             {
             }
-        }
-    }
-
-    private String? FindTranscript(String sessionId)
-    {
-        var fileName = $"{sessionId}.jsonl";
-        try
-        {
-            return Directory
-                .EnumerateFiles(this._projectsDir, fileName, SearchOption.AllDirectories)
-                .OrderByDescending(File.GetLastWriteTimeUtc)
-                .FirstOrDefault();
-        }
-        catch (IOException)
-        {
-            return null;
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return null;
         }
     }
 
@@ -997,6 +990,7 @@ public sealed class StatusReader : IDisposable
                 TryDeleteStaleStatusFile(this._sessionStatusDir, sessionId);
                 if (this._bySessionId.TryRemove(sessionId, out _))
                 {
+                    this._transcripts.Forget(sessionId);
                     this.SessionRemoved?.Invoke(this, sessionId);
                 }
             }
