@@ -217,4 +217,122 @@ public sealed class SlotBusTests : IDisposable
         // remove command classes accordingly.
         Assert.Equal(9, SlotBus.ValidSlotCount);
     }
+
+    // ------------------------------------------------------------------
+    // Publish — elapsed-time counter tick must keep firing
+    //
+    // The button label `GetCommandDisplayName` returns "repo\nMM:SS"
+    // where MM:SS = UpdatedAt − (TurnStartedAt | IdleSince). LPS
+    // re-queries the label only on ActionImageChanged, which fires
+    // via SlotChanged. If SlotBus swallowed repeat publishes because
+    // only UpdatedAt changed, the elapsed counter would freeze — an
+    // 8-hour turn would read 00:00 for 8 hours. So: SlotBus must NOT
+    // dedup. Log-noise suppression belongs upstream in the log path,
+    // not in the IPC path.
+    // ------------------------------------------------------------------
+
+    private static readonly DateTimeOffset StableIdleSince
+        = new(2026, 4, 12, 0, 0, 0, TimeSpan.Zero);
+
+    private static SessionSnapshot SnapshotWith(
+        String sessionId,
+        SessionState state,
+        Int32 pid,
+        DateTimeOffset updatedAt) => new(
+            SessionId: sessionId,
+            Pid: pid,
+            Cwd: "/tmp/dedup",
+            DisplayName: "",
+            State: state,
+            TurnStartedAt: null,
+            IdleSince: StableIdleSince,
+            UpdatedAt: updatedAt,
+            RepoName: "repo");
+
+    [Theory]
+    [InlineData(SessionState.Idle)]
+    [InlineData(SessionState.Working)]
+    [InlineData(SessionState.Thinking)]
+    [InlineData(SessionState.Stuck)]
+    public void Publish_Identical_Content_Different_UpdatedAt_Fires_Twice_For_Counter_States(SessionState state)
+    {
+        var token = SlotBus.AcquireOwnership();
+        var events = new List<(Int32 Slot, SessionSnapshot? Snap)>();
+        SlotBus.SlotChanged += (s, snap) => events.Add((s, snap));
+
+        var first = SnapshotWith("sid-tick", state, pid: 100, updatedAt: Now);
+        var oneSecLater = SnapshotWith("sid-tick", state, pid: 100, updatedAt: Now.AddSeconds(1));
+
+        SlotBus.Publish(token, slot: 0, first);
+        SlotBus.Publish(token, slot: 0, oneSecLater);
+
+        // Both publishes must fire SlotChanged. Without it the macropad
+        // label for an elapsed counter would never tick past its
+        // initial value.
+        Assert.Equal(2, events.Count);
+    }
+
+    [Fact]
+    public void Publish_Different_State_Fires_SlotChanged_Twice()
+    {
+        var token = SlotBus.AcquireOwnership();
+        var events = new List<(Int32 Slot, SessionSnapshot? Snap)>();
+        SlotBus.SlotChanged += (s, snap) => events.Add((s, snap));
+
+        var idle = SnapshotWith("sid-state", SessionState.Idle, pid: 100, updatedAt: Now);
+        var working = SnapshotWith("sid-state", SessionState.Working, pid: 100, updatedAt: Now);
+
+        SlotBus.Publish(token, slot: 0, idle);
+        SlotBus.Publish(token, slot: 0, working);
+
+        Assert.Equal(2, events.Count);
+    }
+
+    [Fact]
+    public void Publish_Different_Pid_Fires_SlotChanged_Twice()
+    {
+        var token = SlotBus.AcquireOwnership();
+        var events = new List<(Int32 Slot, SessionSnapshot? Snap)>();
+        SlotBus.SlotChanged += (s, snap) => events.Add((s, snap));
+
+        var pid100 = SnapshotWith("sid-pid", SessionState.Idle, pid: 100, updatedAt: Now);
+        var pid200 = SnapshotWith("sid-pid", SessionState.Idle, pid: 200, updatedAt: Now);
+
+        SlotBus.Publish(token, slot: 0, pid100);
+        SlotBus.Publish(token, slot: 0, pid200);
+
+        Assert.Equal(2, events.Count);
+    }
+
+    [Fact]
+    public void Publish_Null_After_Snapshot_Always_Fires_SlotChanged()
+    {
+        var token = SlotBus.AcquireOwnership();
+        var events = new List<(Int32 Slot, SessionSnapshot? Snap)>();
+        SlotBus.SlotChanged += (s, snap) => events.Add((s, snap));
+
+        var snap = SnapshotWith("sid-clear", SessionState.Idle, pid: 100, updatedAt: Now);
+
+        SlotBus.Publish(token, slot: 0, snap);
+        SlotBus.Publish(token, slot: 0, snapshot: null);
+
+        Assert.Equal(2, events.Count);
+        Assert.Null(events[1].Snap);
+    }
+
+    [Fact]
+    public void Publish_Null_When_Slot_Already_Empty_Does_Not_Fire()
+    {
+        var token = SlotBus.AcquireOwnership();
+        var events = new List<(Int32 Slot, SessionSnapshot? Snap)>();
+        SlotBus.SlotChanged += (s, snap) => events.Add((s, snap));
+
+        SlotBus.Publish(token, slot: 0, snapshot: null);
+        SlotBus.Publish(token, slot: 0, snapshot: null);
+
+        // No-op clears (null→null) should not fire. A stale-accumulator
+        // reap that races with the session being already gone should
+        // not wake every subscriber.
+        Assert.Empty(events);
+    }
 }

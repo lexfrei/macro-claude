@@ -76,8 +76,6 @@ public abstract class SlotCommandBase : PluginDynamicCommand
     protected override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize)
     {
         var snapshot = SlotBus.TryGetSnapshot(this.SlotIndex);
-        PluginLog.Verbose(
-            $"macro-claude: {this.GetType().Name}.GetCommandImage slot={this.SlotIndex} snapshot={(snapshot is null ? "null" : snapshot.State.ToString())} storeSize={SlotBus.SnapshotCount}");
         return snapshot is null ? DrawEmpty(imageSize) : DrawSlot(snapshot, imageSize);
     }
 
@@ -97,14 +95,25 @@ public abstract class SlotCommandBase : PluginDynamicCommand
         return $"{snapshot.ShortName}{Environment.NewLine}{FormatElapsed(snapshot.Elapsed)}";
     }
 
+    // `snapshot` is unused here: the published snapshot is already
+    // in SlotBus (Publish writes it before raising SlotChanged), and
+    // GetCommandImage / GetCommandDisplayName read it from there. The
+    // parameter is part of the Action<Int32, SessionSnapshot?>
+    // delegate signature SlotBus exposes, so we can't drop it.
+    //
+    // No verbose log either: OnSessionUpdated already logs
+    // (suppressed to state transitions by SessionLogDecision), and
+    // this handler fires at 1 Hz per active slot to keep the
+    // elapsed-time counter on the macropad label ticking. Logging
+    // from here would flood the log with one line per slot per
+    // second in steady state.
     private void OnSlotChanged(Int32 slot, SessionSnapshot? snapshot)
     {
+        _ = snapshot;
         if (slot != this.SlotIndex)
         {
             return;
         }
-        PluginLog.Verbose(
-            $"macro-claude: slot {slot} changed → {this.GetType().Name}.ActionImageChanged (snapshot={(snapshot is null ? "cleared" : snapshot.SessionId)})");
         this.ActionImageChanged();
     }
 

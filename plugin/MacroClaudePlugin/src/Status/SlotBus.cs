@@ -81,6 +81,23 @@ internal static class SlotBus
         {
             return false;
         }
+
+        // Null→null is the only dedup we do here: reaping an already-
+        // empty slot should not wake every subscriber. All other
+        // publishes fire SlotChanged — including content-equal
+        // snapshots with only UpdatedAt changed, because the button
+        // label's elapsed-time counter recomputes only when LPS
+        // re-queries GetCommandDisplayName, which happens on
+        // ActionImageChanged. Dedup'ing content-equal publishes here
+        // would freeze the counter on the macropad. Log-noise
+        // suppression lives upstream in OnSessionUpdated
+        // (SessionLogDecision); this method is the IPC path and
+        // should stay thin.
+        if (snapshot is null && !Snapshots.ContainsKey(slot))
+        {
+            return true;
+        }
+
         if (snapshot is null)
         {
             Snapshots.TryRemove(slot, out _);
