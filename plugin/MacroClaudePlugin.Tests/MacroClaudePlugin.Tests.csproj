@@ -67,6 +67,9 @@
     <Compile Include="..\MacroClaudePlugin\src\Status\TranscriptLocator.cs">
       <Link>Linked\TranscriptLocator.cs</Link>
     </Compile>
+    <Compile Include="..\MacroClaudePlugin\src\Status\SessionLogDecision.cs">
+      <Link>Linked\SessionLogDecision.cs</Link>
+    </Compile>
   </ItemGroup>
 
   <ItemGroup>
