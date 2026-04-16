@@ -95,20 +95,25 @@ public abstract class SlotCommandBase : PluginDynamicCommand
         return $"{snapshot.ShortName}{Environment.NewLine}{FormatElapsed(snapshot.Elapsed)}";
     }
 
+    // `snapshot` is unused here: the published snapshot is already
+    // in SlotBus (Publish writes it before raising SlotChanged), and
+    // GetCommandImage / GetCommandDisplayName read it from there. The
+    // parameter is part of the Action<Int32, SessionSnapshot?>
+    // delegate signature SlotBus exposes, so we can't drop it.
+    //
+    // No verbose log either: OnSessionUpdated already logs
+    // (suppressed to state transitions by SessionLogDecision), and
+    // this handler fires at 1 Hz per active slot to keep the
+    // elapsed-time counter on the macropad label ticking. Logging
+    // from here would flood the log with one line per slot per
+    // second in steady state.
     private void OnSlotChanged(Int32 slot, SessionSnapshot? snapshot)
     {
+        _ = snapshot;
         if (slot != this.SlotIndex)
         {
             return;
         }
-
-        // No verbose log here: OnSessionUpdated already logs
-        // (suppressed to state transitions by SessionLogDecision),
-        // and this handler runs at 1 Hz per active slot to keep the
-        // elapsed-time counter on the macropad label ticking. Logging
-        // from here would flood the log with one line per slot per
-        // second in steady state.
-        _ = snapshot;
         this.ActionImageChanged();
     }
 
