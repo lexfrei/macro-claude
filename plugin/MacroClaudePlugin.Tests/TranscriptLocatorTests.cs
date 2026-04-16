@@ -1,5 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Threading;
+using System.Threading.Tasks;
 
 using Loupedeck.MacroClaudePlugin.Status;
 
@@ -146,5 +149,67 @@ public sealed class TranscriptLocatorTests : IDisposable
 
         var afterForget = locator.Locate(sid, cwd);
         Assert.Null(afterForget);
+    }
+
+    [Fact]
+    public async Task Locate_Is_Safe_Under_Concurrent_Forget()
+    {
+        // Production wiring: StatusReader's poll timer calls Locate on
+        // a thread-pool thread, while FSW Deleted callbacks call
+        // Forget on a different thread-pool thread. They can collide
+        // arbitrarily on shutdown or session teardown. ConcurrentDictionary
+        // makes this safe; this test keeps it that way.
+        var cwd = "/tmp/concurrent";
+        var sid = "sid-race";
+        var path = Path.Combine(this._projectsDir, TranscriptPathEncoder.Encode(cwd), sid + ".jsonl");
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        await File.WriteAllTextAsync(path, "{}", TestContext.Current.CancellationToken);
+
+        var locator = new TranscriptLocator(this._projectsDir);
+        var results = new List<String?>();
+        var sync = new Object();
+        using var stop = new ManualResetEventSlim(false);
+
+        var ct = TestContext.Current.CancellationToken;
+        var locateTasks = new Task[8];
+        for (var i = 0; i < locateTasks.Length; i++)
+        {
+            locateTasks[i] = Task.Run(
+                () =>
+                {
+                    while (!stop.IsSet)
+                    {
+                        var r = locator.Locate(sid, cwd);
+                        lock (sync)
+                        {
+                            results.Add(r);
+                        }
+                    }
+                },
+                ct);
+        }
+
+        var forgetTask = Task.Run(
+            () =>
+            {
+                while (!stop.IsSet)
+                {
+                    locator.Forget(sid);
+                }
+            },
+            ct);
+
+        await Task.Delay(100, TestContext.Current.CancellationToken);
+        stop.Set();
+        await Task.WhenAll(locateTasks);
+        await forgetTask;
+
+        // Every Locate either saw the file (returned path) or raced
+        // a Forget (returned null and re-resolved). No throws, no
+        // corruption. Both outcomes are valid.
+        foreach (var r in results)
+        {
+            Assert.True(r is null || r == path);
+        }
     }
 }
