@@ -19,8 +19,7 @@ public sealed class SessionLogDecisionTests
     {
         var should = SessionLogDecision.ShouldLog(
             previous: null,
-            nextSlot: 0,
-            nextState: SessionState.Idle);
+            next: new LogMemo(0, SessionState.Idle));
 
         Assert.True(should);
     }
@@ -29,9 +28,8 @@ public sealed class SessionLogDecisionTests
     public void Same_Slot_Same_State_Does_Not_Log()
     {
         var should = SessionLogDecision.ShouldLog(
-            previous: (Slot: 0, State: SessionState.Idle),
-            nextSlot: 0,
-            nextState: SessionState.Idle);
+            previous: new LogMemo(0, SessionState.Idle),
+            next: new LogMemo(0, SessionState.Idle));
 
         Assert.False(should);
     }
@@ -40,9 +38,8 @@ public sealed class SessionLogDecisionTests
     public void Same_Slot_Different_State_Logs()
     {
         var should = SessionLogDecision.ShouldLog(
-            previous: (Slot: 0, State: SessionState.Idle),
-            nextSlot: 0,
-            nextState: SessionState.Working);
+            previous: new LogMemo(0, SessionState.Idle),
+            next: new LogMemo(0, SessionState.Working));
 
         Assert.True(should);
     }
@@ -54,9 +51,8 @@ public sealed class SessionLogDecisionTests
         // slot if an earlier slot freed up. Rare in practice but
         // worth logging when it happens.
         var should = SessionLogDecision.ShouldLog(
-            previous: (Slot: 0, State: SessionState.Idle),
-            nextSlot: 3,
-            nextState: SessionState.Idle);
+            previous: new LogMemo(0, SessionState.Idle),
+            next: new LogMemo(3, SessionState.Idle));
 
         Assert.True(should);
     }

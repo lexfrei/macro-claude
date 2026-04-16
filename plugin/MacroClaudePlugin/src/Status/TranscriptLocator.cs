@@ -70,7 +70,13 @@ public sealed class TranscriptLocator(String projectsDir)
 
         // Fallback. This is the old O(N) behaviour that we had before
         // TranscriptPathEncoder existed — keep it for robustness but
-        // never expect to execute it in the steady state.
+        // never expect to execute it in the steady state. Note: once
+        // we land here for a session and find a file, the result is
+        // cached and every subsequent Locate() for the same session
+        // skips the fast-path check, even if the file later moves to
+        // the "right" location. The session lives a bounded time, so
+        // the tradeoff favours stability over eventual fast-path
+        // reactivation.
         try
         {
             return Directory

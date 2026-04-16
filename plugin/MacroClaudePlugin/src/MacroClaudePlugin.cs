@@ -21,7 +21,7 @@ public class MacroClaudePlugin : Plugin
     // Per-session memo of the last (slot, state) that OnSessionUpdated
     // actually logged. SessionLogDecision consults it to suppress the
     // "session → slot" verbose line when the update is a no-op repeat.
-    private readonly ConcurrentDictionary<String, (Int32 Slot, SessionState State)> _lastLogged
+    private readonly ConcurrentDictionary<String, LogMemo> _lastLogged
         = new(StringComparer.Ordinal);
 
     public MacroClaudePlugin()
@@ -132,14 +132,15 @@ public class MacroClaudePlugin : Plugin
         // changed for this session. StatusReader re-emits every poll
         // tick with a fresh UpdatedAt stamp; without this filter the
         // plugin log grew at ~10 lines/sec per active session.
-        var previous = this._lastLogged.TryGetValue(snapshot.SessionId, out var last)
+        var next = new LogMemo(slot, snapshot.State);
+        LogMemo? previous = this._lastLogged.TryGetValue(snapshot.SessionId, out var last)
             ? last
-            : ((Int32, SessionState)?)null;
-        if (SessionLogDecision.ShouldLog(previous, slot, snapshot.State))
+            : null;
+        if (SessionLogDecision.ShouldLog(previous, next))
         {
             PluginLog.Verbose(
                 $"macro-claude: session {snapshot.SessionId} → slot {slot} state={snapshot.State} name={snapshot.ShortName}");
-            this._lastLogged[snapshot.SessionId] = (slot, snapshot.State);
+            this._lastLogged[snapshot.SessionId] = next;
         }
 
         if (!SlotBus.Publish(this._busToken, slot, snapshot))
