@@ -76,8 +76,6 @@ public abstract class SlotCommandBase : PluginDynamicCommand
     protected override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize)
     {
         var snapshot = SlotBus.TryGetSnapshot(this.SlotIndex);
-        PluginLog.Verbose(
-            $"macro-claude: {this.GetType().Name}.GetCommandImage slot={this.SlotIndex} snapshot={(snapshot is null ? "null" : snapshot.State.ToString())} storeSize={SlotBus.SnapshotCount}");
         return snapshot is null ? DrawEmpty(imageSize) : DrawSlot(snapshot, imageSize);
     }
 
