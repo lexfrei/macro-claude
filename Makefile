@@ -20,8 +20,8 @@ help: ## Show this help
 lint: lint-shell lint-plugin lint-vscode ## Run all linters
 
 .PHONY: lint-shell
-lint-shell: ## Run shellcheck over all bash hooks
-	@shellcheck --severity=style --shell=bash --external-sources --enable=all $(HOOKS_DIR)/*.sh
+lint-shell: ## Run shellcheck over all bash hooks and scripts
+	@shellcheck --severity=style --shell=bash --external-sources --enable=all $(HOOKS_DIR)/*.sh scripts/*.sh
 
 .PHONY: lint-plugin
 lint-plugin: ## Run dotnet format + build with analyzers (strict)
@@ -103,6 +103,11 @@ release-vsix: ## Build VS Code companion extension .vsix
 release-upload: ## Upload $(DIST_DIR)/* to the current GitHub release (needs gh + $(TAG))
 	@test -n "$(TAG)" || (echo "usage: make release-upload TAG=v1.0.0" && exit 1)
 	@gh release upload "$(TAG)" $(DIST_DIR)/MacroClaudePlugin.lplug4 $(DIST_DIR)/macro-claude-bridge-*.vsix --clobber
+
+.PHONY: brew-bump
+brew-bump: ## Bump lexfrei/homebrew-tap macro-claude formula to $(TAG)
+	@test -n "$(TAG)" || (echo "usage: make brew-bump TAG=v1.0.0" && exit 1)
+	@bash scripts/brew-bump.sh "$(TAG)"
 
 .PHONY: clean
 clean: ## Remove build artefacts
