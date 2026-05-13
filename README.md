@@ -294,7 +294,19 @@ The build's PostBuild target writes a `.link` file into
 points at the built DLL. Logi Plugin Service picks the plugin up
 automatically — no `.lplug4` install needed for local use.
 
-To produce a distributable `.lplug4` package:
+**Or** install the latest released plugin via Homebrew:
+
+```bash
+brew tap lexfrei/tap
+brew install macro-claude
+```
+
+The formula unpacks the `.lplug4` into the brew prefix and prints a
+one-liner in `caveats` that writes the `.link` file into LPS's plugin
+directory. Run that line once, and LPS picks the plugin up on its
+next reload.
+
+To produce a distributable `.lplug4` package locally:
 
 ```bash
 dotnet logiplugintool pack plugin/MacroClaudePlugin/bin/Release dist/MacroClaudePlugin.lplug4
@@ -443,11 +455,20 @@ CI builds the plugin on every push (using the vendored
 the DLL directly and installs it into LPS via a `.link` file — no
 `.lplug4` packaging needed.
 
-To produce a distributable `.lplug4` for sharing:
+To produce a distributable `.lplug4` for sharing and publish a full
+release that includes the Homebrew formula:
 
 ```bash
 make release-plugin               # produces dist/MacroClaudePlugin.lplug4
+make release-upload TAG=v1.0.0    # attach .lplug4 + .vsix to the GitHub release
+make brew-bump TAG=v1.0.0         # rewrite Formula/macro-claude.rb in lexfrei/homebrew-tap
 ```
+
+`make brew-bump` downloads the published `.lplug4` from the release,
+computes its sha256, regenerates the formula from a template in
+`scripts/brew-bump.sh`, and pushes directly to `master` of the local
+clone of `lexfrei/homebrew-tap` (default path
+`~/git/github.com/lexfrei/homebrew-tap`).
 
 ## Troubleshooting
 
