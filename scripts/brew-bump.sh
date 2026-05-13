@@ -126,13 +126,17 @@ class MacroClaude < Formula
 end
 EOF
 
-if git -C "${TAP_DIR}" diff --quiet -- "${FORMULA_REL}"; then
+# Stage first, then compare against HEAD. Plain `git diff --quiet`
+# ignores untracked files entirely, so the first bump (when the
+# formula is brand new) looked identical to "no changes" and the
+# commit step was skipped silently.
+git -C "${TAP_DIR}" add "${FORMULA_REL}"
+if git -C "${TAP_DIR}" diff --cached --quiet -- "${FORMULA_REL}"; then
     echo "==> Formula already up to date, nothing to commit"
     exit 0
 fi
 
 echo "==> Committing and pushing"
-git -C "${TAP_DIR}" add "${FORMULA_REL}"
 git -C "${TAP_DIR}" commit --signoff \
     --message "chore(macro-claude): bump to ${TAG}"
 git -C "${TAP_DIR}" push origin master
