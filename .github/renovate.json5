@@ -40,6 +40,17 @@
 
   // ----- Per-ecosystem rules. ------------------------------------------
   packageRules: [
+    // === Hold TypeScript at 6.x =========================================
+    // typescript-eslint refuses to load against TS 7 and says so itself:
+    // "typescript-eslint does not support TS 7.0". tsc --noEmit passes fine, so
+    // the code is ready; the linter is not. Tracked upstream in
+    // typescript-eslint/typescript-eslint#10940. Drop this once it lands.
+    {
+      matchManagers: ["npm"],
+      matchPackageNames: ["typescript"],
+      allowedVersions: "<7",
+    },
+
     // === NuGet (.NET) ===================================================
     // The plugin csproj and test csproj pull in xunit, StyleCop, Roslynator,
     // Microsoft.NET.Test.Sdk, Google.Protobuf, Grpc.Tools, etc.
