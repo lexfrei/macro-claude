@@ -110,16 +110,20 @@
       semanticCommitScope: "nuget",
     },
 
-    // === Auto-merge: patch bumps ========================================
-    // Patch bumps auto-merge after CI is green. Majors and minors stay
-    // manual. GitHub Actions are pinned to SHA so even a patch could be
-    // malicious — they stay manual.
+    // === Auto-merge: minor and patch bumps ==============================
+    // CI is the gate: build treats warnings as errors, tests run, and the
+    // TypeScript side is strict-type-checked, so a bump that breaks anything
+    // stays open. Majors stay manual because they usually need code changes.
+    // GitHub Actions are pinned to SHA and stay manual regardless.
+    //
+    // platformAutomerge is deliberately absent: GitHub auto-merge cannot be
+    // enabled on a PR that is already mergeable, and master here has no
+    // required status check, so the API rejects it and nothing ever merges.
+    // Renovate performs the merge itself instead, gating on the same checks.
     {
-      matchUpdateTypes: ["patch"],
+      matchUpdateTypes: ["minor", "patch"],
       matchManagers: ["nuget", "npm"],
       automerge: true,
-      automergeType: "branch",
-      platformAutomerge: true,
     },
   ],
 
