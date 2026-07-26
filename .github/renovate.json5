@@ -20,6 +20,20 @@
   prHourlyLimit: 0,
   prConcurrentLimit: 10,
 
+  // Automerge every update type. CI is the gate, and here it is a strict one:
+  // the build treats warnings as errors, tests run, and the TypeScript side is
+  // strict-type-checked. A major that needs code changes fails those and stays
+  // open on its own, which is what holding majors for review stood in for.
+  //
+  // This belongs at the top level, not in packageRules: a rule carrying only
+  // `automerge` and no match* selector is rejected outright, and Renovate then
+  // stops opening and merging PRs in the whole repo until the config is fixed.
+  //
+  // platformAutomerge stays off. GitHub auto-merge cannot be enabled on a PR
+  // that is already mergeable, and master has no required status check, so the
+  // API rejects it and nothing merges. Renovate does the merge itself.
+  automerge: true,
+
   baseBranches: ["master"],
   labels: ["dependencies"],
 
@@ -123,19 +137,6 @@
       semanticCommitScope: "nuget",
     },
 
-    // === Auto-merge: everything =========================================
-    // CI is the gate, and here it is a strict one: the build treats warnings as
-    // errors, tests run, and the TypeScript side is strict-type-checked. A major
-    // that needs code changes fails those and stays open on its own, which is
-    // what holding majors for review was standing in for.
-    //
-    // platformAutomerge is deliberately absent: GitHub auto-merge cannot be
-    // enabled on a PR that is already mergeable, and master here has no
-    // required status check, so the API rejects it and nothing ever merges.
-    // Renovate performs the merge itself instead, gating on the same checks.
-    {
-      automerge: true,
-    },
   ],
 
   // ----- Disable managers that do not apply. ----------------------------
