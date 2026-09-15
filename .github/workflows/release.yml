@@ -42,7 +42,7 @@ jobs:
 
       - uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: "8.0.x"
+          dotnet-version: "10.0.401"
 
       - name: dotnet test (xunit v3 native runner)
         run: dotnet run --project plugin/MacroClaudePlugin.Tests/MacroClaudePlugin.Tests.csproj --configuration Release
