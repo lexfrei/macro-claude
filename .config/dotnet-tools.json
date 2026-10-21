@@ -3,7 +3,7 @@
   "isRoot": true,
   "tools": {
     "logiplugintool": {
-      "version": "6.1.4.22672",
+      "version": "6.4.2.3599",
       "commands": [
         "logiplugintool"
       ]
