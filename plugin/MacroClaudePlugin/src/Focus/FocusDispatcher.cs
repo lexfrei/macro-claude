@@ -234,6 +234,11 @@ public static class FocusDispatcher
         return null;
     }
 
+    private static String GetStringProperty(JsonElement element, String propertyName)
+        => element.TryGetProperty(propertyName, out var value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString() ?? String.Empty
+            : String.Empty;
+
     private static (String Name, String Root) ParseBridgeResponse(String body)
     {
         if (String.IsNullOrEmpty(body))
@@ -243,14 +248,8 @@ public static class FocusDispatcher
         try
         {
             using var doc = JsonDocument.Parse(body);
-            var name = doc.RootElement.TryGetProperty("workspaceName", out var ws)
-                && ws.ValueKind == JsonValueKind.String
-                ? ws.GetString() ?? String.Empty
-                : String.Empty;
-            var root = doc.RootElement.TryGetProperty("workspaceRoot", out var wr)
-                && wr.ValueKind == JsonValueKind.String
-                ? wr.GetString() ?? String.Empty
-                : String.Empty;
+            var name = GetStringProperty(doc.RootElement, "workspaceName");
+            var root = GetStringProperty(doc.RootElement, "workspaceRoot");
             return (name, root);
         }
         catch (JsonException)
