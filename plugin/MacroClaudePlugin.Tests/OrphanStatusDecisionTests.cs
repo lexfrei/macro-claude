@@ -76,13 +76,11 @@ public sealed class OrphanStatusDecisionTests
         // transcript. StatusReader.Emit treats max(hook, jsonl) as
         // liveness, so the reaper must follow the same rule to avoid
         // deleting a still-live session.
-        var result = OrphanStatusDecision.SessionsToReap(
-            [Candidate(
-                "alpha",
-                heartbeatAge: TimeSpan.FromHours(4),
-                jsonlAge: TimeSpan.FromSeconds(30))],
-            Now,
-            Threshold).ToList();
+        var candidate = Candidate(
+            "alpha",
+            heartbeatAge: TimeSpan.FromHours(4),
+            jsonlAge: TimeSpan.FromSeconds(30));
+        var result = OrphanStatusDecision.SessionsToReap([candidate], Now, Threshold).ToList();
 
         Assert.Empty(result);
     }
@@ -92,13 +90,11 @@ public sealed class OrphanStatusDecisionTests
     {
         // The classic hard-reboot orphan: status file on disk, no
         // sessions/<pid>.json, no transcript activity.
-        var result = OrphanStatusDecision.SessionsToReap(
-            [Candidate(
-                "alpha",
-                heartbeatAge: Threshold + TimeSpan.FromSeconds(1),
-                jsonlAge: null)],
-            Now,
-            Threshold).ToList();
+        var candidate = Candidate(
+            "alpha",
+            heartbeatAge: Threshold + TimeSpan.FromSeconds(1),
+            jsonlAge: null);
+        var result = OrphanStatusDecision.SessionsToReap([candidate], Now, Threshold).ToList();
 
         Assert.Equal(ExpectedAlpha, result);
     }
@@ -106,13 +102,11 @@ public sealed class OrphanStatusDecisionTests
     [Fact]
     public void Session_With_Stale_Heartbeat_And_Stale_Jsonl_Is_Reaped()
     {
-        var result = OrphanStatusDecision.SessionsToReap(
-            [Candidate(
-                "alpha",
-                heartbeatAge: TimeSpan.FromHours(4),
-                jsonlAge: TimeSpan.FromHours(3))],
-            Now,
-            Threshold).ToList();
+        var candidate = Candidate(
+            "alpha",
+            heartbeatAge: TimeSpan.FromHours(4),
+            jsonlAge: TimeSpan.FromHours(3));
+        var result = OrphanStatusDecision.SessionsToReap([candidate], Now, Threshold).ToList();
 
         Assert.Equal(ExpectedAlpha, result);
     }
@@ -121,13 +115,11 @@ public sealed class OrphanStatusDecisionTests
     public void Session_With_Only_Fresh_Jsonl_Is_Not_Reaped()
     {
         // Hook never fired but transcript is active — a live session.
-        var result = OrphanStatusDecision.SessionsToReap(
-            [Candidate(
-                "alpha",
-                heartbeatAge: null,
-                jsonlAge: TimeSpan.FromSeconds(10))],
-            Now,
-            Threshold).ToList();
+        var candidate = Candidate(
+            "alpha",
+            heartbeatAge: null,
+            jsonlAge: TimeSpan.FromSeconds(10));
+        var result = OrphanStatusDecision.SessionsToReap([candidate], Now, Threshold).ToList();
 
         Assert.Empty(result);
     }
